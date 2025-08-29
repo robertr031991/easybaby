@@ -3,21 +3,116 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>EasyBaby</title>
+  <title>EasyBaby — Sign In</title>
+  <meta name="color-scheme" content="light dark" />
   <style>
-    body {
-      font-family: system-ui, sans-serif;
-      background: #f9fafb;
-      padding: 2rem;
-      text-align: center;
-    }
-    h1 {
-      color: #111827;
-    }
+    :root { --bg:#f9fafb; --card:#ffffff; --text:#111827; --muted:#6b7280; --line:#e5e7eb; --brand:#b45309; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width: 480px; margin: 0 auto; padding: 24px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    h1 { margin:0 0 8px; font-size:22px; }
+    p  { margin:0 0 14px; color:var(--muted); }
+    input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; }
+    button { appearance:none; border:none; background:var(--brand); color:#fff; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer; }
+    .row { display:flex; gap:10px; align-items:center; }
+    .center { text-align:center; }
+    .mt-2{ margin-top:8px; } .mt-3{ margin-top:12px; } .mt-4{ margin-top:16px; }
+    .muted { color: var(--muted); font-size:13px; }
+    .hidden { display:none; }
   </style>
+
+  <!-- Supabase JS (v2) from CDN + app script -->
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    // Using your provided values:
+    const SUPABASE_URL = 'https://mfgdasfnidxxzcymfvfx.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mZ2Rhc2ZuaWR4eHpjeW1mdmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0NzYxNTksImV4cCI6MjA3MjA1MjE1OX0.hMk0myq85kUDUB-RXvb-Y5Xg36lLFWryVOi34x3ahYU';
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const views = {
+      signedOut: () => document.getElementById('view-signed-out'),
+      signedIn:  () => document.getElementById('view-signed-in'),
+      emailSent: () => document.getElementById('view-email-sent')
+    };
+    const emailInput = () => document.getElementById('email');
+    const statusEl   = () => document.getElementById('status');
+
+    async function init() {
+      // Ensure Supabase knows where to send the magic-link back
+      const { data: { session } } = await supabase.auth.getSession();
+      setView(session ? 'in' : 'out');
+    }
+
+    function setView(which) {
+      views.signedOut().classList.add('hidden');
+      views.signedIn().classList.add('hidden');
+      views.emailSent().classList.add('hidden');
+      if (which === 'out')  views.signedOut().classList.remove('hidden');
+      if (which === 'in')   views.signedIn().classList.remove('hidden');
+      if (which === 'sent') views.emailSent().classList.remove('hidden');
+    }
+
+    // Send magic link
+    async function sendLink(e) {
+      e.preventDefault();
+      statusEl().textContent = 'Sending magic link…';
+      const email = emailInput().value.trim();
+      if (!email) { statusEl().textContent = 'Enter an email.'; return; }
+
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: { emailRedirectTo: window.location.origin }
+      });
+      if (error) statusEl().textContent = `Error: ${error.message}`;
+      else { statusEl().textContent = ''; setView('sent'); }
+    }
+
+    // Sign out
+    async function logout() {
+      await supabase.auth.signOut();
+      setView('out');
+    }
+
+    // React to auth state (after clicking the email link)
+    supabase.auth.onAuthStateChange((_event, session) => {
+      setView(session ? 'in' : 'out');
+    });
+
+    // Expose handlers
+    window.easybaby = { sendLink, logout };
+
+    init();
+  </script>
 </head>
 <body>
-  <h1>👶 Hello EasyBaby</h1>
-  <p>If you see this page live, Supabase + Vercel are wired up. We’ll add login + activity logging next.</p>
+  <div class="wrap">
+    <div class="card">
+      <h1>EasyBaby</h1>
+      <p class="muted">Sign in with a magic link to start tracking feeds, naps, diapers, and more.</p>
+
+      <!-- Signed OUT -->
+      <form id="view-signed-out" onsubmit="easybaby.sendLink(event)">
+        <input id="email" type="email" placeholder="you@example.com" required />
+        <div class="row mt-3">
+          <button type="submit">Send Magic Link</button>
+          <span id="status" class="muted"></span>
+        </div>
+      </form>
+
+      <!-- Email SENT -->
+      <div id="view-email-sent" class="hidden center mt-4">
+        <p>✅ Check your email for the magic link. Open it on this device.</p>
+      </div>
+
+      <!-- Signed IN -->
+      <div id="view-signed-in" class="hidden mt-4">
+        <p>✅ You’re signed in.</p>
+        <button onclick="easybaby.logout()" class="mt-2">Sign out</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
