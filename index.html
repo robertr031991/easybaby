@@ -31,13 +31,12 @@
     .pill { background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; padding:4px 8px; border-radius:999px; font-size:12px; }
     .badge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid var(--line); background:#fff; }
     .ok { color:#065f46; } .err { color:#b91c1c; }
+    .note { font-size:12px; background:#fff; border:1px dashed #e5e7eb; padding:8px 10px; border-radius:8px; margin-top:8px; }
 
     /* Tabs */
     .tabs { display:flex; gap:8px; margin: 10px 0 16px; }
     .tab-btn { background:#fff; color:#374151; border:1px solid var(--line); padding:8px 12px; border-radius:999px; cursor:pointer; }
     .tab-btn.active { background:#111827; color:#fff; border-color:#111827; }
-
-    .note { font-size:12px; background:#fff; border:1px dashed #e5e7eb; padding:8px 10px; border-radius:8px; margin-top:8px; }
 
     /* Modal */
     .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; padding:16px; }
@@ -53,12 +52,11 @@
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
     /* ===== One-time auto-reload after new deploy ===== */
-    const APP_VERSION = 'v0.2.1'; // bump this whenever you deploy updates
+    const APP_VERSION = 'v0.2.2';
     try {
       const prev = localStorage.getItem('APP_VERSION');
       if (prev && prev !== APP_VERSION) {
         localStorage.setItem('APP_VERSION', APP_VERSION);
-        // Add a cache-busting query parameter and reload once
         const url = new URL(window.location.href);
         if (url.searchParams.get('v') !== APP_VERSION) {
           url.searchParams.set('v', APP_VERSION);
@@ -76,68 +74,74 @@
 
     const ACTIVE_KEY = 'easybaby.activeBabyId';
 
-    // Views/els
+    // Elements
+    const el = (id)=>document.getElementById(id);
     const v = {
-      out:   () => document.getElementById('view-signed-out'),
-      in:    () => document.getElementById('view-signed-in'),
-      sent:  () => document.getElementById('view-email-sent'),
-      tabs:  () => document.getElementById('tabs'),
-      activity: () => document.getElementById('tab-activity'),
-      settings: () => document.getElementById('tab-settings'),
-      status:() => document.getElementById('status'),
-      who:   () => document.getElementById('whoami'),
-      tabBtns:() => document.querySelectorAll('.tab-btn'),
-      activeName:() => document.getElementById('active-baby-name'),
-      addBtn: () => document.getElementById('open-add-modal')
+      out:   ()=> el('view-signed-out'),
+      in:    ()=> el('view-signed-in'),
+      sent:  ()=> el('view-email-sent'),
+      tabs:  ()=> el('tabs'),
+      activity: ()=> el('tab-activity'),
+      settings: ()=> el('tab-settings'),
+      status:()=> el('status'),
+      who:   ()=> el('whoami'),
+      tabBtns:()=> document.querySelectorAll('.tab-btn'),
+      activeName:()=> el('active-baby-name'),
+      babyList: ()=> el('baby-list'),
+      todayTotals:()=> el('today-totals'),
+      feedList: ()=> el('feed-list'),
+      // modal
+      modalBackdrop: ()=> el('modal-backdrop'),
+      modalTitle: ()=> el('modal-title'),
+      feedForm: ()=> el('feed-form'),
+      feedWhen: ()=> el('feed-when'),
+      feedType: ()=> el('feed-type'),
+      feedAmount:()=> el('feed-amount'),
+      feedUnits: ()=> el('feed-units'),
+      feedSide:  ()=> el('feed-side'),
+      feedDurL:  ()=> el('feed-dur-left'),
+      feedDurR:  ()=> el('feed-dur-right'),
+      feedNotes: ()=> el('feed-notes'),
+      feedBreastRow: ()=> el('breast-row'),
+      feedSave: ()=> el('feed-save'),
+      feedMsg:  ()=> el('feed-msg'),
+      feedId:   ()=> el('feed-id')
     };
 
-    // Settings
-    const babyForm = {
-      name: () => document.getElementById('baby-name'),
-      dob:  () => document.getElementById('baby-dob'),
-      tz:   () => document.getElementById('baby-tz'),
-      btn:  () => document.getElementById('create-baby-btn'),
-      msg:  () => document.getElementById('create-msg')
-    };
-    const babyList = () => document.getElementById('baby-list');
-
-    // Feeds (list + modal form)
-    const feedList = () => document.getElementById('feed-list');
-    const todayTotals = () => document.getElementById('today-totals');
-
-    const feedModal = {
-      backdrop: () => document.getElementById('modal-backdrop'),
-      title:    () => document.getElementById('modal-title'),
-      form:     () => document.getElementById('feed-form'),
-      when:     () => document.getElementById('feed-when'),
-      type:     () => document.getElementById('feed-type'),
-      amount:   () => document.getElementById('feed-amount'),
-      units:    () => document.getElementById('feed-units'),
-      side:     () => document.getElementById('feed-side'),
-      durL:     () => document.getElementById('feed-dur-left'),
-      durR:     () => document.getElementById('feed-dur-right'),
-      notes:    () => document.getElementById('feed-notes'),
-      breastRow:() => document.getElementById('breast-row'),
-      saveBtn:  () => document.getElementById('feed-save'),
-      cancelBtn:() => document.getElementById('feed-cancel'),
-      msg:      () => document.getElementById('feed-msg'),
-      idField:  () => document.getElementById('feed-id') // hidden
-    };
-
-    // ---------- Auth boot ----------
+    /* ---------- Auth boot with auto-heal ---------- */
     async function init() {
-      // Refresh session so an old tab doesn’t hold a stale token
+      // 1) Refresh session so a stale tab doesn’t hold an expired token
       try { await supabase.auth.refreshSession(); } catch {}
-      const { data: { session } } = await supabase.auth.getSession();
 
+      const { data: { session } } = await supabase.auth.getSession();
       setAuthView(!!session);
-      if (session) {
-        await showWhoAmI();
-        setDefaultTimezone();
-        await loadBabies();
-        await refreshActiveHeader();
-        await loadTodayFeeds();
+
+      if (!session) {
+        switchTab('activity');
+        return;
       }
+
+      await showWhoAmI();
+
+      // 2) Load babies
+      const babies = await fetchBabies();
+      if (babies.error) {
+        v.babyList().innerHTML = `<div class="err">Error loading babies: ${babies.error}</div>`;
+        return;
+      }
+
+      // 3) Auto-heal active baby: if missing/invalid, pick most recent
+      let activeId = localStorage.getItem(ACTIVE_KEY);
+      const hasActive = activeId && babies.rows.some(b => b.id === activeId);
+      if (!hasActive) {
+        activeId = babies.rows[0]?.id || null;
+        if (activeId) localStorage.setItem(ACTIVE_KEY, activeId);
+      }
+
+      await renderBabies(babies.rows, activeId);
+      await refreshActiveHeader();
+      await loadTodayFeeds();
+
       switchTab(location.hash === '#settings' ? 'settings' : 'activity');
     }
 
@@ -150,14 +154,8 @@
 
     supabase.auth.onAuthStateChange(async (_evt, session) => {
       setAuthView(!!session);
-      if (session) {
-        await showWhoAmI();
-        await loadBabies();
-        await refreshActiveHeader();
-        await loadTodayFeeds();
-      } else {
-        v.who().textContent = '';
-      }
+      if (!session) { v.who().textContent = ''; return; }
+      await init(); // re-run init to auto-heal if user signs in
     });
 
     async function showWhoAmI(){
@@ -165,18 +163,19 @@
       v.who().textContent = user?.email ? `Signed in as: ${user.email}` : '';
     }
 
-    // ---------- Tabs ----------
+    /* ---------- Tabs ---------- */
     function switchTab(name) {
       v.tabBtns().forEach(btn => btn.classList.remove('active'));
-      document.querySelector(`[data-tab="${name}"]`).classList.add('active');
+      const btn = document.querySelector(`[data-tab="${name}"]`);
+      if (btn) btn.classList.add('active');
       v.activity().classList.add('hidden');
       v.settings().classList.add('hidden');
       if (name === 'activity') { v.activity().classList.remove('hidden'); location.hash = '#activity'; }
       else { v.settings().classList.remove('hidden'); location.hash = '#settings'; }
     }
 
-    // ---------- Login ----------
-    function emailInput(){ return document.getElementById('email'); }
+    /* ---------- Sign-in ---------- */
+    function emailInput(){ return el('email'); }
     async function sendLink(e) {
       e.preventDefault();
       v.status().textContent = 'Sending magic link…';
@@ -194,60 +193,28 @@
       switchTab('activity');
     }
 
-    // ---------- Settings: Babies ----------
+    /* ---------- Babies (Settings) ---------- */
     function setDefaultTimezone() {
-      try { babyForm.tz().value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'; }
-      catch { babyForm.tz().value = 'America/New_York'; }
+      try { el('baby-tz').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'; }
+      catch { el('baby-tz').value = 'America/New_York'; }
     }
 
-    async function createBaby(e) {
-      e.preventDefault();
-      const btn = babyForm.btn();
-      btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Saving…';
-      babyForm.msg().textContent = ''; babyForm.msg().className = 'muted';
-
-      try {
-        const name = babyForm.name().value.trim();
-        const dob  = babyForm.dob().value;
-        const tz   = babyForm.tz().value.trim() || 'America/New_York';
-        if (!name || !dob) { babyForm.msg().textContent = 'Enter name and DOB.'; babyForm.msg().className='err'; return; }
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Not signed in');
-
-        const { error } = await supabase
-          .from('babies')
-          .insert([{ owner_id: user.id, name, dob, timezone: tz, day_start_hour: 0 }], { returning:'minimal' });
-        if (error) throw error;
-
-        babyForm.msg().textContent = 'Saved!'; babyForm.msg().className='ok';
-        babyForm.name().value=''; babyForm.dob().value='';
-        await loadBabies();
-      } catch (err) {
-        babyForm.msg().textContent = 'Error: ' + (err?.message || String(err));
-        babyForm.msg().className='err';
-      } finally { btn.disabled=false; btn.textContent=prev; }
-    }
-
-    async function loadBabies() {
-      babyList().innerHTML = '<div class="muted">Loading…</div>';
+    async function fetchBabies() {
+      v.babyList().innerHTML = '<div class="muted">Loading…</div>';
       const { data, error } = await supabase
         .from('babies')
         .select('id,name,dob,timezone,created_at')
         .order('created_at',{ascending:false});
+      if (error) return { rows: [], error: error.message };
+      return { rows: data || [], error: null };
+    }
 
-      if (error){
-        babyList().innerHTML = `<div class="err">Error loading babies: ${error.message}</div>`;
+    async function renderBabies(rows, activeId) {
+      if (!rows.length) {
+        v.babyList().innerHTML = '<div class="muted">No babies yet for this signed-in email.</div><div class="note">Tip: If you created a baby under a different email, sign out and sign back in with that address.</div>';
         return;
       }
-
-      const activeId = localStorage.getItem(ACTIVE_KEY);
-      if (!data || data.length===0){
-        babyList().innerHTML = '<div class="muted">No babies yet for this signed-in email.</div><div class="note">Tip: If you created a baby under a different email, sign out and sign back in with that address.</div>';
-        return;
-      }
-
-      babyList().innerHTML = data.map(b=>{
+      v.babyList().innerHTML = rows.map(b=>{
         const isActive = b.id===activeId;
         const ageMonths = Math.max(0, Math.floor((Date.now()-new Date(b.dob+'T00:00:00').getTime())/(1000*60*60*24*30.437)));
         return `
@@ -263,6 +230,37 @@
           </div>
         `;
       }).join('');
+    }
+
+    async function createBaby(e) {
+      e.preventDefault();
+      const btn = el('create-baby-btn');
+      btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Saving…';
+      el('create-msg').textContent = ''; el('create-msg').className = 'muted';
+
+      try {
+        const name = el('baby-name').value.trim();
+        const dob  = el('baby-dob').value;
+        const tz   = el('baby-tz').value.trim() || 'America/New_York';
+        if (!name || !dob) { el('create-msg').textContent = 'Enter name and DOB.'; el('create-msg').className='err'; return; }
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not signed in');
+
+        const { error } = await supabase
+          .from('babies')
+          .insert([{ owner_id: user.id, name, dob, timezone: tz, day_start_hour: 0 }], { returning:'minimal' });
+        if (error) throw error;
+
+        el('create-msg').textContent = 'Saved!'; el('create-msg').className='ok';
+        el('baby-name').value=''; el('baby-dob').value='';
+        const babies = await fetchBabies();
+        await renderBabies(babies.rows, babies.rows[0]?.id);
+        if (babies.rows[0]?.id) setActive(babies.rows[0].id);
+      } catch (err) {
+        el('create-msg').textContent = 'Error: ' + (err?.message || String(err));
+        el('create-msg').className='err';
+      } finally { btn.disabled=false; btn.textContent=prev; }
     }
 
     async function refreshActiveHeader() {
@@ -283,7 +281,7 @@
       switchTab('activity');
     }
 
-    // ---------- Activity: FEED modal ----------
+    /* ---------- Activity: Feed modal ---------- */
     function fmtLocalForInput(dt){
       const pad=n=>String(n).padStart(2,'0');
       return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
@@ -294,72 +292,67 @@
       if (Number.isNaN(n)) return null;
       return units==='ml' ? Math.round(n) : Math.round(n*29.5735);
     }
-    function fmtTime(d){ return new Date(d).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); }
-    function fmtAmount(ml){ if (ml==null) return ''; const oz = Math.round((ml/29.5735)*10)/10; return `${oz} oz (${ml} ml)`; }
 
     function openFeedModal(mode='create', record=null){
       const id = localStorage.getItem(ACTIVE_KEY);
       if (!id){ alert('Set an active baby in Settings first.'); return; }
 
-      feedModal.idField().value = record?.id || '';
-      feedModal.title().textContent = mode==='edit' ? 'Edit Feed' : 'Log Feed';
-      feedModal.msg().textContent = ''; feedModal.msg().className='muted';
+      v.feedId().value = record?.id || '';
+      el('modal-title').textContent = mode==='edit' ? 'Edit Feed' : 'Log Feed';
+      v.feedMsg().textContent = ''; v.feedMsg().className='muted';
 
-      // defaults
       if (record){
-        feedModal.when().value = fmtLocalForInput(new Date(record.fed_at));
-        feedModal.type().value = record.feed_type || 'Breast';
-        feedModal.amount().value = record.amount_ml ? Math.round((record.amount_ml/29.5735)*10)/10 : '';
-        feedModal.units().value = 'oz';
-        feedModal.side().value = record.side || '';
-        feedModal.durL().value = record.duration_left_min ?? '';
-        feedModal.durR().value = record.duration_right_min ?? '';
-        feedModal.notes().value = record.notes ?? '';
+        v.feedWhen().value = fmtLocalForInput(new Date(record.fed_at));
+        v.feedType().value = record.feed_type || 'Breast';
+        v.feedAmount().value = record.amount_ml ? Math.round((record.amount_ml/29.5735)*10)/10 : '';
+        v.feedUnits().value = 'oz';
+        v.feedSide().value = record.side || '';
+        v.feedDurL().value = record.duration_left_min ?? '';
+        v.feedDurR().value = record.duration_right_min ?? '';
+        v.feedNotes().value = record.notes ?? '';
       } else {
-        feedModal.when().value = fmtLocalForInput(new Date());
-        feedModal.type().value = 'Breast';
-        feedModal.amount().value = '';
-        feedModal.units().value = 'oz';
-        feedModal.side().value = '';
-        feedModal.durL().value = '';
-        feedModal.durR().value = '';
-        feedModal.notes().value = '';
+        v.feedWhen().value = fmtLocalForInput(new Date());
+        v.feedType().value = 'Breast';
+        v.feedAmount().value = '';
+        v.feedUnits().value = 'oz';
+        v.feedSide().value = '';
+        v.feedDurL().value = '';
+        v.feedDurR().value = '';
+        v.feedNotes().value = '';
       }
       updateFeedTypeVisibility();
-      feedModal.backdrop().style.display = 'flex';
+      v.modalBackdrop().style.display = 'flex';
     }
-    function closeFeedModal(){
-      feedModal.backdrop().style.display = 'none';
-    }
+    function closeFeedModal(){ v.modalBackdrop().style.display = 'none'; }
     function updateFeedTypeVisibility(){
-      const t = feedModal.type().value;
-      feedModal.breastRow().classList.toggle('hidden', t!=='Breast');
+      const t = v.feedType().value;
+      v.feedBreastRow().classList.toggle('hidden', t!=='Breast');
     }
 
     async function saveFeed(e){
       e.preventDefault();
       const activeId = localStorage.getItem(ACTIVE_KEY);
-      if (!activeId){ feedModal.msg().textContent='Set an active baby first.'; feedModal.msg().className='err'; return; }
+      if (!activeId){ v.feedMsg().textContent='Set an active baby first.'; v.feedMsg().className='err'; return; }
 
-      const btn = feedModal.saveBtn(); const prev=btn.textContent; btn.disabled=true; btn.textContent='Saving…';
-      feedModal.msg().textContent=''; feedModal.msg().className='muted';
+      const btn = v.feedSave(); const prev=btn.textContent; btn.disabled=true; btn.textContent='Saving…';
+      v.feedMsg().textContent=''; v.feedMsg().className='muted';
 
       try{
-        const when = new Date(feedModal.when().value);
+        const when = new Date(v.feedWhen().value);
         if (isNaN(when.getTime())) throw new Error('Invalid date/time');
 
-        const type = feedModal.type().value; // Breast, Formula, Solid
-        const amount = toMl(feedModal.amount().value, feedModal.units().value);
-        const side = type==='Breast' ? (feedModal.side().value || null) : null;
-        const durL = type==='Breast' ? (feedModal.durL().value ? Number(feedModal.durL().value) : null) : null;
-        const durR = type==='Breast' ? (feedModal.durR().value ? Number(feedModal.durR().value) : null) : null;
-        const notes = feedModal.notes().value.trim() || null;
+        const type = v.feedType().value;
+        const amount = toMl(v.feedAmount().value, v.feedUnits().value);
+        const side = type==='Breast' ? (v.feedSide().value || null) : null;
+        const durL = type==='Breast' ? (v.feedDurL().value ? Number(v.feedDurL().value) : null) : null;
+        const durR = type==='Breast' ? (v.feedDurR().value ? Number(v.feedDurR().value) : null) : null;
+        const notes = v.feedNotes().value.trim() || null;
 
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not signed in');
 
         const payload = { baby_id:activeId, user_id:user.id, fed_at:when.toISOString(), amount_ml:amount, feed_type:type, side, duration_left_min:durL, duration_right_min:durR, notes };
-        const existingId = feedModal.idField().value;
+        const existingId = v.feedId().value;
 
         if (existingId){
           const { error } = await supabase.from('feeds').update(payload).eq('id', existingId);
@@ -372,8 +365,8 @@
         closeFeedModal();
         await loadTodayFeeds();
       }catch(err){
-        feedModal.msg().textContent = 'Error: ' + (err?.message || String(err));
-        feedModal.msg().className='err';
+        v.feedMsg().textContent = 'Error: ' + (err?.message || String(err));
+        v.feedMsg().className='err';
       }finally{
         btn.disabled=false; btn.textContent=prev;
       }
@@ -386,18 +379,20 @@
       await loadTodayFeeds();
     }
 
-    // ---------- Today list ----------
+    /* ---------- Today list ---------- */
     function todayRangeISO(){
       const start = new Date(); start.setHours(0,0,0,0);
       const end = new Date();
       return [start.toISOString(), end.toISOString()];
     }
+    function fmtAmount(ml){ if (ml==null) return ''; const oz = Math.round((ml/29.5735)*10)/10; return `${oz} oz (${ml} ml)`; }
+    function fmtTime(d){ return new Date(d).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); }
 
     async function loadTodayFeeds(){
       const id = localStorage.getItem(ACTIVE_KEY);
-      if (!id){ feedList().innerHTML='<div class="muted">Set an active baby to see today’s feeds.</div>'; todayTotals().textContent=''; return; }
+      if (!id){ v.feedList().innerHTML='<div class="muted">Set an active baby to see today’s feeds.</div>'; v.todayTotals().textContent=''; return; }
       const [start,end] = todayRangeISO();
-      feedList().innerHTML = '<div class="muted">Loading…</div>';
+      v.feedList().innerHTML = '<div class="muted">Loading…</div>';
 
       const { data, error } = await supabase
         .from('feeds')
@@ -407,10 +402,10 @@
         .lte('fed_at', end)
         .order('fed_at', { ascending:false });
 
-      if (error){ feedList().innerHTML = '<div class="err">Error loading feeds.</div>'; todayTotals().textContent=''; return; }
-      if (!data || data.length===0){ feedList().innerHTML = '<div class="muted">No feeds yet today.</div>'; todayTotals().textContent=''; return; }
+      if (error){ v.feedList().innerHTML = '<div class="err">Error loading feeds.</div>'; v.todayTotals().textContent=''; return; }
+      if (!data || data.length===0){ v.feedList().innerHTML = '<div class="muted">No feeds yet today.</div>'; v.todayTotals().textContent=''; return; }
 
-      feedList().innerHTML = data.map(r=>{
+      v.feedList().innerHTML = data.map(r=>{
         const extra = [];
         if (r.feed_type==='Breast' && r.side) extra.push(`Side: ${r.side}`);
         if (r.duration_left_min!=null || r.duration_right_min!=null){
@@ -422,11 +417,11 @@
         return `
           <div class="item">
             <div class="between">
-              <div><strong>${r.feed_type}</strong> • ${new Date(r.fed_at).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })}</div>
+              <div><strong>${r.feed_type}</strong> • ${fmtTime(r.fed_at)}</div>
               <div class="row">
                 <button class="btn-ghost" onclick="easybaby.editFeed('${r.id}')">Edit</button>
                 <button class="btn-ghost" onclick="easybaby.deleteFeed('${r.id}')">Delete</button>
-                <div class="badge">${(r.amount_ml==null?'':`${Math.round((r.amount_ml/29.5735)*10)/10} oz (${r.amount_ml} ml)`)}</div>
+                <div class="badge">${fmtAmount(r.amount_ml)}</div>
               </div>
             </div>
             ${extra.length?`<div class="muted mt-1">${extra.join(' • ')}</div>`:''}
@@ -437,13 +432,12 @@
 
       const totalMl = data.reduce((sum,r)=> sum + (r.amount_ml||0), 0);
       const totalOz = Math.round((totalMl/29.5735)*10)/10;
-      todayTotals().textContent = `Today: ${totalOz} oz (${totalMl} ml) across ${data.length} feed${data.length===1?'':'s'}.`;
+      v.todayTotals().textContent = `Today: ${totalOz} oz (${totalMl} ml) across ${data.length} feed${data.length===1?'':'s'}.`;
 
-      // cache for edit button lookups
       window.__todayFeeds = data.reduce((m,r)=> (m[r.id]=r,m), {});
     }
 
-    // Expose handlers
+    /* ---------- Expose a few handlers ---------- */
     window.easybaby = {
       sendLink, logout, switchTab,
       createBaby, setActive,
@@ -451,7 +445,8 @@
       editFeed: (id)=> openFeedModal('edit', window.__todayFeeds?.[id] || null)
     };
 
-    // Kick off
+    // Kickoff
+    setDefaultTimezone();
     init();
   </script>
 </head>
@@ -489,7 +484,7 @@
         <section id="tab-activity" class="">
           <div class="between">
             <h2>Active Baby: <span id="active-baby-name" class="muted">No active baby — set one in Settings.</span></h2>
-            <button id="open-add-modal" onclick="easybaby.openFeedModal('create')" class="">+ Log Activity</button>
+            <button id="open-add-modal" onclick="easybaby.openFeedModal('create')">+ Log Activity</button>
           </div>
 
           <!-- Today’s Feeds -->
