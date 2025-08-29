@@ -35,31 +35,36 @@
     .tabs { display:flex; gap:8px; margin: 10px 0 16px; }
     .tab-btn { background:#fff; color:#374151; border:1px solid var(--line); padding:8px 12px; border-radius:999px; cursor:pointer; }
     .tab-btn.active { background:#111827; color:#fff; border-color:#111827; }
+
+    .note { font-size:12px; background:#fff; border:1px dashed #e5e7eb; padding:8px 10px; border-radius:8px; margin-top:8px; }
   </style>
 
-  <!-- Supabase JS (v2) from CDN + app script -->
+  <!-- Supabase JS (v2) -->
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-    // Your Supabase project values (anon key is OK in browser)
+    // Supabase project (anon key is OK in browser)
     const SUPABASE_URL = 'https://mfgdasfnidxxzcymfvfx.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mZ2Rhc2ZuaWR4eHpjeW1mdmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0NzYxNTksImV4cCI6MjA3MjA1MjE1OX0.hMk0myq85kUDUB-RXvb-Y5Xg36lLFWryVOi34x3ahYU';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const ACTIVE_KEY = 'easybaby.activeBabyId';
 
-    // Views
+    // Views/els
     const v = {
       out:   () => document.getElementById('view-signed-out'),
       in:    () => document.getElementById('view-signed-in'),
       sent:  () => document.getElementById('view-email-sent'),
+      tabs:  () => document.getElementById('tabs'),
       activity: () => document.getElementById('tab-activity'),
       settings: () => document.getElementById('tab-settings'),
-      tabs:  () => document.querySelectorAll('.tab-btn'),
-      status:() => document.getElementById('status')
+      status:() => document.getElementById('status'),
+      who:   () => document.getElementById('whoami'),
+      tabBtns:() => document.querySelectorAll('.tab-btn'),
+      activeName:() => document.getElementById('active-baby-name')
     };
 
-    // Settings (babies)
+    // Settings
     const babyForm = {
       name: () => document.getElementById('baby-name'),
       dob:  () => document.getElementById('baby-dob'),
@@ -68,9 +73,8 @@
       msg:  () => document.getElementById('create-msg')
     };
     const babyList = () => document.getElementById('baby-list');
-    const activeName = () => document.getElementById('active-baby-name');
 
-    // Feed form (activity)
+    // Feeds
     const feedForm = {
       wrap:  () => document.getElementById('feed-wrap'),
       when:  () => document.getElementById('feed-when'),
@@ -93,6 +97,7 @@
       const { data: { session } } = await supabase.auth.getSession();
       setAuthView(!!session);
       if (session) {
+        await showWhoAmI();
         setDefaultTimezone();
         await loadBabies();
         await refreshActiveHeader();
@@ -100,30 +105,36 @@
         updateFeedTypeVisibility();
         await loadTodayFeeds();
       }
-      // open tab from hash if present
-      const initialTab = location.hash === '#settings' ? 'settings' : 'activity';
-      switchTab(initialTab);
+      switchTab(location.hash === '#settings' ? 'settings' : 'activity');
     }
 
     function setAuthView(signedIn) {
       v.out().classList.toggle('hidden', signedIn);
       v.in().classList.toggle('hidden', !signedIn);
       v.sent().classList.add('hidden');
+      v.tabs().classList.toggle('hidden', !signedIn);
     }
 
-    // Listen for auth state changes
     supabase.auth.onAuthStateChange(async (_evt, session) => {
       setAuthView(!!session);
       if (session) {
+        await showWhoAmI();
         await loadBabies();
         await refreshActiveHeader();
         await loadTodayFeeds();
+      } else {
+        v.who().textContent = '';
       }
     });
 
+    async function showWhoAmI(){
+      const { data: { user } } = await supabase.auth.getUser();
+      v.who().textContent = user?.email ? `Signed in as: ${user.email}` : '';
+    }
+
     // ---------- Tabs ----------
     function switchTab(name) {
-      v.tabs().forEach(btn => btn.classList.remove('active'));
+      v.tabBtns().forEach(btn => btn.classList.remove('active'));
       document.querySelector(`[data-tab="${name}"]`).classList.add('active');
       v.activity().classList.add('hidden');
       v.settings().classList.add('hidden');
@@ -191,9 +202,17 @@
         .from('babies')
         .select('id,name,dob,timezone,created_at')
         .order('created_at',{ascending:false});
-      if (error){ babyList().innerHTML = '<div class="err">Error loading babies.</div>'; return; }
+
+      if (error){
+        babyList().innerHTML = `<div class="err">Error loading babies: ${error.message}</div>`;
+        return;
+      }
+
       const activeId = localStorage.getItem(ACTIVE_KEY);
-      if (!data || data.length===0){ babyList().innerHTML = '<div class="muted">No babies yet. Create one above.</div>'; return; }
+      if (!data || data.length===0){
+        babyList().innerHTML = '<div class="muted">No babies yet for this signed-in email.</div><div class="note">Tip: If you created a baby under a different email, sign out and sign back in with that address.</div>';
+        return;
+      }
 
       babyList().innerHTML = data.map(b=>{
         const isActive = b.id===activeId;
@@ -215,10 +234,10 @@
 
     async function refreshActiveHeader() {
       const id = localStorage.getItem(ACTIVE_KEY);
-      if (!id){ activeName().textContent = 'No active baby — set one in Settings.'; feedForm.wrap().classList.add('hidden'); return; }
+      if (!id){ v.activeName().textContent = 'No active baby — set one in Settings.'; feedForm.wrap().classList.add('hidden'); return; }
       const { data, error } = await supabase.from('babies').select('name').eq('id', id).single();
-      if (error || !data){ activeName().textContent='Active baby not found'; feedForm.wrap().classList.add('hidden'); return; }
-      activeName().textContent = data.name;
+      if (error || !data){ v.activeName().textContent='Active baby not found'; feedForm.wrap().classList.add('hidden'); return; }
+      v.activeName().textContent = data.name;
       feedForm.wrap().classList.remove('hidden');
     }
 
@@ -229,19 +248,18 @@
       if (badge) badge.classList.remove('hidden');
       refreshActiveHeader();
       loadTodayFeeds();
-      switchTab('activity'); // bounce to Activity after setting
+      switchTab('activity');
     }
 
     // ---------- Activity: Feeds ----------
     function setDefaultFeedTime(){
       const now = new Date();
       const pad = n => String(n).padStart(2,'0');
-      feedForm.when().value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      document.getElementById('feed-when').value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
     }
     function updateFeedTypeVisibility(){
-      const t = feedForm.type().value;
-      if (t==='Breast'){ feedForm.breastRow().classList.remove('hidden'); }
-      else { feedForm.breastRow().classList.add('hidden'); }
+      const t = document.getElementById('feed-type').value;
+      document.getElementById('breast-row').classList.toggle('hidden', t!=='Breast');
     }
     function toMl(amount, units){
       if (!amount) return null;
@@ -261,7 +279,7 @@
         const when = new Date(feedForm.when().value);
         if (isNaN(when.getTime())) throw new Error('Invalid date/time');
 
-        const type = feedForm.type().value; // Breast, Formula, Solid
+        const type = feedForm.type().value;
         const amount = toMl(feedForm.amount().value, feedForm.units().value);
         const side = type==='Breast' ? feedForm.side().value || null : null;
         const durL = type==='Breast' ? (feedForm.durL().value ? Number(feedForm.durL().value) : null) : null;
@@ -330,14 +348,13 @@
       todayTotals().textContent = `Today: ${totalOz} oz (${totalMl} ml) across ${data.length} feed${data.length===1?'':'s'}.`;
     }
 
-    // Expose handlers globally for buttons/forms
+    // Expose handlers
     window.easybaby = {
       sendLink, logout, switchTab,
       createBaby, setActive,
       saveFeed, updateFeedTypeVisibility
     };
 
-    // Kick off
     init();
   </script>
 </head>
@@ -369,13 +386,7 @@
 
       <!-- Signed IN -->
       <div id="view-signed-in" class="hidden mt-2">
-        <script>
-          // Reveal tabs when signed in (tiny inline helper to avoid module scope issues)
-          document.addEventListener('DOMContentLoaded', ()=> {
-            const tabs = document.getElementById('tabs');
-            if (tabs) tabs.classList.remove('hidden');
-          });
-        </script>
+        <div id="whoami" class="note"></div>
 
         <!-- ACTIVITY TAB -->
         <section id="tab-activity" class="">
