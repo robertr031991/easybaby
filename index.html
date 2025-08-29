@@ -14,7 +14,8 @@
     h1 { margin:0 0 8px; font-size:22px; }
     h2 { margin:16px 0 10px; font-size:18px; }
     p  { margin:0 0 14px; color:var(--muted); }
-    input, select { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; }
+    label { display:block; font-size:12px; color:var(--muted); margin-bottom:6px; }
+    input, select { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; background:#fff; }
     button { appearance:none; border:none; background:var(--brand); color:#fff; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer; }
     .row { display:flex; gap:10px; align-items:center; }
     .mt-2{ margin-top:8px; } .mt-3{ margin-top:12px; } .mt-4{ margin-top:16px; }
@@ -49,19 +50,15 @@
       createBtn: () => document.getElementById('create-baby-btn')
     };
     const babyList = () => document.getElementById('baby-list');
-    const activeBadge = (id) => document.querySelector(`[data-baby="${id}"] .active-badge`);
-
     const ACTIVE_KEY = 'easybaby.activeBabyId';
 
-    // Initialize UI based on current session
     async function init() {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) console.error('getSession error:', error);
+      setView(session ? 'in' : 'out');
       if (session) {
-        setView('in');
         setDefaultTimezone();
         await loadBabies();
-      } else {
-        setView('out');
       }
     }
 
@@ -94,14 +91,12 @@
       setView('out');
     }
 
-    // Auth state changes (after clicking the email link)
+    // Auth change → refresh babies list
     supabase.auth.onAuthStateChange(async (_event, session) => {
+      setView(session ? 'in' : 'out');
       if (session) {
-        setView('in');
         setDefaultTimezone();
         await loadBabies();
-      } else {
-        setView('out');
       }
     });
 
@@ -112,58 +107,62 @@
       } catch { babyForm.tz().value = 'America/New_York'; }
     }
 
-    // Create baby
+    // Create baby (robust error handling)
     async function createBaby(e) {
       e.preventDefault();
-      babyForm.createBtn().disabled = true;
-      babyForm.createBtn().textContent = 'Saving…';
 
-      const name = babyForm.name().value.trim();
-      const dob  = babyForm.dob().value; // yyyy-mm-dd
-      const tz   = babyForm.tz().value.trim() || 'America/New_York';
-      if (!name || !dob) {
-        alert('Please enter name and date of birth.');
-        babyForm.createBtn().disabled = false;
-        babyForm.createBtn().textContent = 'Create Baby';
-        return;
-      }
+      const btn = babyForm.createBtn();
+      btn.disabled = true;
+      const prevText = btn.textContent;
+      btn.textContent = 'Saving…';
 
-      const { data: { user }, error: uerr } = await supabase.auth.getUser();
-      if (uerr || !user) { alert('Not signed in.'); return; }
+      try {
+        const name = babyForm.name().value.trim();
+        const dob  = babyForm.dob().value; // yyyy-mm-dd
+        const tz   = babyForm.tz().value.trim() || 'America/New_York';
+        if (!name || !dob) {
+          alert('Please enter name and date of birth.');
+          return;
+        }
 
-      // Insert baby; owner_id must equal auth.uid() (RLS rule)
-      const { error } = await supabase.from('babies').insert({
-        owner_id: user.id,
-        name,
-        dob,           // stored as DATE
-        timezone: tz,
-        day_start_hour: 0
-      });
+        const { data: { user }, error: uerr } = await supabase.auth.getUser();
+        if (uerr) throw uerr;
+        if (!user) throw new Error('Not signed in');
 
-      if (error) {
-        alert('Error creating baby: ' + error.message);
-      } else {
+        // Insert and return the row
+        const { data, error } = await supabase
+          .from('babies')
+          .insert([{ owner_id: user.id, name, dob, timezone: tz, day_start_hour: 0 }])
+          .select()
+          .single();
+
+        if (error) throw error;
+
         // Clear form and refresh list
         babyForm.name().value = '';
         babyForm.dob().value = '';
         await loadBabies();
-      }
 
-      babyForm.createBtn().disabled = false;
-      babyForm.createBtn().textContent = 'Create Baby';
+      } catch (err) {
+        console.error('createBaby error:', err);
+        alert('Error creating baby: ' + (err?.message || String(err)));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prevText;
+      }
     }
 
-    // Load babies owned by the current user (owner can read; members read via policy too)
+    // Load babies you can see (owner/membership via RLS)
     async function loadBabies() {
       babyList().innerHTML = '<div class="muted">Loading…</div>';
 
-      // We show babies where you are owner. (Later we’ll UNION shared memberships.)
       const { data, error } = await supabase
         .from('babies')
         .select('id,name,dob,timezone,created_at,owner_id')
         .order('created_at', { ascending: false });
 
       if (error) {
+        console.error('loadBabies error:', error);
         babyList().innerHTML = '<div class="muted">Error loading babies.</div>';
         return;
       }
@@ -193,18 +192,16 @@
       }).join('');
     }
 
-    // Set active baby in browser (for now). We’ll store in DB later if you want cross-device default.
     function setActive(id) {
       localStorage.setItem(ACTIVE_KEY, id);
       document.querySelectorAll('.active-badge').forEach(el => el.classList.add('hidden'));
-      const badge = activeBadge(id);
+      const badge = document.querySelector(`[data-baby="${id}"] .active-badge`);
       if (badge) badge.classList.remove('hidden');
     }
 
     // Expose handlers
     window.easybaby = { sendLink, logout, createBaby, setActive };
 
-    // Kick things off
     init();
   </script>
 </head>
@@ -233,15 +230,15 @@
         <h2>Create Baby</h2>
         <form onsubmit="easybaby.createBaby(event)">
           <div class="mt-2">
-            <label for="baby-name" class="muted">Name</label>
+            <label for="baby-name">Name</label>
             <input id="baby-name" type="text" placeholder="e.g., Peyton" required />
           </div>
           <div class="mt-2">
-            <label for="baby-dob" class="muted">Date of Birth</label>
+            <label for="baby-dob">Date of Birth</label>
             <input id="baby-dob" type="date" required />
           </div>
           <div class="mt-2">
-            <label for="baby-tz" class="muted">Timezone</label>
+            <label for="baby-tz">Timezone</label>
             <input id="baby-tz" type="text" placeholder="America/New_York" />
           </div>
           <div class="row mt-3">
@@ -251,6 +248,10 @@
 
         <h2 class="mt-4">Your Babies</h2>
         <div id="baby-list" class="list"></div>
+
+        <div class="mt-4">
+          <button onclick="easybaby.logout()">Sign out</button>
+        </div>
       </div>
     </div>
   </div>
