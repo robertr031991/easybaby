@@ -18,6 +18,7 @@
     input, select, textarea { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; background:#fff; }
     textarea { min-height:72px; resize:vertical; }
     button { appearance:none; border:none; background:var(--brand); color:#fff; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer; }
+    .btn-ghost { background:#fff; color:#374151; border:1px solid var(--line); }
     .row { display:flex; gap:10px; align-items:center; }
     .between { display:flex; justify-content:space-between; align-items:center; gap:12px; }
     .grid { display:grid; gap:12px; }
@@ -37,6 +38,14 @@
     .tab-btn.active { background:#111827; color:#fff; border-color:#111827; }
 
     .note { font-size:12px; background:#fff; border:1px dashed #e5e7eb; padding:8px 10px; border-radius:8px; margin-top:8px; }
+
+    /* Modal */
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; padding:16px; }
+    .modal { width:100%; max-width:560px; background:#fff; border-radius:16px; border:1px solid var(--line); box-shadow:0 20px 60px rgba(0,0,0,.25); }
+    .modal header { padding:16px 18px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+    .modal main { padding:18px; }
+    .modal footer { padding:14px 18px; border-top:1px solid var(--line); display:flex; gap:10px; justify-content:flex-end; }
+    .close-x { background:transparent; color:#6b7280; border:none; font-size:20px; line-height:1; cursor:pointer; }
   </style>
 
   <!-- Supabase JS (v2) -->
@@ -61,7 +70,8 @@
       status:() => document.getElementById('status'),
       who:   () => document.getElementById('whoami'),
       tabBtns:() => document.querySelectorAll('.tab-btn'),
-      activeName:() => document.getElementById('active-baby-name')
+      activeName:() => document.getElementById('active-baby-name'),
+      addBtn: () => document.getElementById('open-add-modal')
     };
 
     // Settings
@@ -74,23 +84,28 @@
     };
     const babyList = () => document.getElementById('baby-list');
 
-    // Feeds
-    const feedForm = {
-      wrap:  () => document.getElementById('feed-wrap'),
-      when:  () => document.getElementById('feed-when'),
-      type:  () => document.getElementById('feed-type'),
-      amount:() => document.getElementById('feed-amount'),
-      units: () => document.getElementById('feed-units'),
-      side:  () => document.getElementById('feed-side'),
-      durL:  () => document.getElementById('feed-dur-left'),
-      durR:  () => document.getElementById('feed-dur-right'),
-      notes: () => document.getElementById('feed-notes'),
-      btn:   () => document.getElementById('feed-save'),
-      msg:   () => document.getElementById('feed-msg'),
-      breastRow: () => document.getElementById('breast-row')
-    };
+    // Feeds (list + modal form)
     const feedList = () => document.getElementById('feed-list');
     const todayTotals = () => document.getElementById('today-totals');
+
+    const feedModal = {
+      backdrop: () => document.getElementById('modal-backdrop'),
+      title:    () => document.getElementById('modal-title'),
+      form:     () => document.getElementById('feed-form'),
+      when:     () => document.getElementById('feed-when'),
+      type:     () => document.getElementById('feed-type'),
+      amount:   () => document.getElementById('feed-amount'),
+      units:    () => document.getElementById('feed-units'),
+      side:     () => document.getElementById('feed-side'),
+      durL:     () => document.getElementById('feed-dur-left'),
+      durR:     () => document.getElementById('feed-dur-right'),
+      notes:    () => document.getElementById('feed-notes'),
+      breastRow:() => document.getElementById('breast-row'),
+      saveBtn:  () => document.getElementById('feed-save'),
+      cancelBtn:() => document.getElementById('feed-cancel'),
+      msg:      () => document.getElementById('feed-msg'),
+      idField:  () => document.getElementById('feed-id') // hidden
+    };
 
     // ---------- Auth boot ----------
     async function init() {
@@ -101,8 +116,6 @@
         setDefaultTimezone();
         await loadBabies();
         await refreshActiveHeader();
-        setDefaultFeedTime();
-        updateFeedTypeVisibility();
         await loadTodayFeeds();
       }
       switchTab(location.hash === '#settings' ? 'settings' : 'activity');
@@ -234,11 +247,10 @@
 
     async function refreshActiveHeader() {
       const id = localStorage.getItem(ACTIVE_KEY);
-      if (!id){ v.activeName().textContent = 'No active baby — set one in Settings.'; feedForm.wrap().classList.add('hidden'); return; }
+      if (!id){ v.activeName().textContent = 'No active baby — set one in Settings.'; return; }
       const { data, error } = await supabase.from('babies').select('name').eq('id', id).single();
-      if (error || !data){ v.activeName().textContent='Active baby not found'; feedForm.wrap().classList.add('hidden'); return; }
+      if (error || !data){ v.activeName().textContent='Active baby not found'; return; }
       v.activeName().textContent = data.name;
-      feedForm.wrap().classList.remove('hidden');
     }
 
     function setActive(id) {
@@ -251,15 +263,10 @@
       switchTab('activity');
     }
 
-    // ---------- Activity: Feeds ----------
-    function setDefaultFeedTime(){
-      const now = new Date();
-      const pad = n => String(n).padStart(2,'0');
-      document.getElementById('feed-when').value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    }
-    function updateFeedTypeVisibility(){
-      const t = document.getElementById('feed-type').value;
-      document.getElementById('breast-row').classList.toggle('hidden', t!=='Breast');
+    // ---------- Activity: FEED modal ----------
+    function fmtLocalForInput(dt){
+      const pad=n=>String(n).padStart(2,'0');
+      return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
     }
     function toMl(amount, units){
       if (!amount) return null;
@@ -267,50 +274,104 @@
       if (Number.isNaN(n)) return null;
       return units==='ml' ? Math.round(n) : Math.round(n*29.5735);
     }
+    function fmtTime(d){ return new Date(d).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); }
+    function fmtAmount(ml){ if (ml==null) return ''; const oz = Math.round((ml/29.5735)*10)/10; return `${oz} oz (${ml} ml)`; }
+
+    function openFeedModal(mode='create', record=null){
+      const id = localStorage.getItem(ACTIVE_KEY);
+      if (!id){ alert('Set an active baby in Settings first.'); return; }
+
+      feedModal.idField().value = record?.id || '';
+      feedModal.title().textContent = mode==='edit' ? 'Edit Feed' : 'Log Feed';
+      feedModal.msg().textContent = ''; feedModal.msg().className='muted';
+
+      // defaults
+      if (record){
+        feedModal.when().value = fmtLocalForInput(new Date(record.fed_at));
+        feedModal.type().value = record.feed_type || 'Breast';
+        feedModal.amount().value = record.amount_ml ? Math.round((record.amount_ml/29.5735)*10)/10 : '';
+        feedModal.units().value = 'oz';
+        feedModal.side().value = record.side || '';
+        feedModal.durL().value = record.duration_left_min ?? '';
+        feedModal.durR().value = record.duration_right_min ?? '';
+        feedModal.notes().value = record.notes ?? '';
+      } else {
+        feedModal.when().value = fmtLocalForInput(new Date());
+        feedModal.type().value = 'Breast';
+        feedModal.amount().value = '';
+        feedModal.units().value = 'oz';
+        feedModal.side().value = '';
+        feedModal.durL().value = '';
+        feedModal.durR().value = '';
+        feedModal.notes().value = '';
+      }
+      updateFeedTypeVisibility();
+      feedModal.backdrop().style.display = 'flex';
+    }
+    function closeFeedModal(){
+      feedModal.backdrop().style.display = 'none';
+    }
+    function updateFeedTypeVisibility(){
+      const t = feedModal.type().value;
+      feedModal.breastRow().classList.toggle('hidden', t!=='Breast');
+    }
+
     async function saveFeed(e){
       e.preventDefault();
-      const id = localStorage.getItem(ACTIVE_KEY);
-      if (!id){ feedForm.msg().textContent='Set an active baby in Settings first.'; feedForm.msg().className='err'; return; }
+      const activeId = localStorage.getItem(ACTIVE_KEY);
+      if (!activeId){ feedModal.msg().textContent='Set an active baby first.'; feedModal.msg().className='err'; return; }
 
-      const btn = feedForm.btn(); const prev=btn.textContent; btn.disabled=true; btn.textContent='Saving…';
-      feedForm.msg().textContent=''; feedForm.msg().className='muted';
+      const btn = feedModal.saveBtn(); const prev=btn.textContent; btn.disabled=true; btn.textContent='Saving…';
+      feedModal.msg().textContent=''; feedModal.msg().className='muted';
 
       try{
-        const when = new Date(feedForm.when().value);
+        const when = new Date(feedModal.when().value);
         if (isNaN(when.getTime())) throw new Error('Invalid date/time');
 
-        const type = feedForm.type().value;
-        const amount = toMl(feedForm.amount().value, feedForm.units().value);
-        const side = type==='Breast' ? feedForm.side().value || null : null;
-        const durL = type==='Breast' ? (feedForm.durL().value ? Number(feedForm.durL().value) : null) : null;
-        const durR = type==='Breast' ? (feedForm.durR().value ? Number(feedForm.durR().value) : null) : null;
-        const notes = feedForm.notes().value.trim() || null;
+        const type = feedModal.type().value; // Breast, Formula, Solid
+        const amount = toMl(feedModal.amount().value, feedModal.units().value);
+        const side = type==='Breast' ? (feedModal.side().value || null) : null;
+        const durL = type==='Breast' ? (feedModal.durL().value ? Number(feedModal.durL().value) : null) : null;
+        const durR = type==='Breast' ? (feedModal.durR().value ? Number(feedModal.durR().value) : null) : null;
+        const notes = feedModal.notes().value.trim() || null;
 
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not signed in');
 
-        const payload = { baby_id:id, user_id:user.id, fed_at:when.toISOString(), amount_ml:amount, feed_type:type, side, duration_left_min:durL, duration_right_min:durR, notes };
-        const { error } = await supabase.from('feeds').insert([payload], { returning:'minimal' });
-        if (error) throw error;
+        const payload = { baby_id:activeId, user_id:user.id, fed_at:when.toISOString(), amount_ml:amount, feed_type:type, side, duration_left_min:durL, duration_right_min:durR, notes };
+        const existingId = feedModal.idField().value;
 
-        feedForm.msg().textContent = 'Saved!'; feedForm.msg().className='ok';
-        feedForm.amount().value=''; feedForm.notes().value='';
+        if (existingId){
+          const { error } = await supabase.from('feeds').update(payload).eq('id', existingId);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('feeds').insert([payload], { returning:'minimal' });
+          if (error) throw error;
+        }
+
+        closeFeedModal();
         await loadTodayFeeds();
       }catch(err){
-        feedForm.msg().textContent = 'Error: ' + (err?.message || String(err));
-        feedForm.msg().className='err';
+        feedModal.msg().textContent = 'Error: ' + (err?.message || String(err));
+        feedModal.msg().className='err';
       }finally{
         btn.disabled=false; btn.textContent=prev;
       }
     }
 
+    async function deleteFeed(id){
+      if (!confirm('Delete this feed?')) return;
+      const { error } = await supabase.from('feeds').delete().eq('id', id);
+      if (error){ alert('Error deleting: '+error.message); return; }
+      await loadTodayFeeds();
+    }
+
+    // ---------- Today list ----------
     function todayRangeISO(){
       const start = new Date(); start.setHours(0,0,0,0);
       const end = new Date();
       return [start.toISOString(), end.toISOString()];
     }
-    function fmtTime(d){ return new Date(d).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); }
-    function fmtAmount(ml){ if (ml==null) return ''; const oz = Math.round((ml/29.5735)*10)/10; return `${oz} oz (${ml} ml)`; }
 
     async function loadTodayFeeds(){
       const id = localStorage.getItem(ACTIVE_KEY);
@@ -320,7 +381,7 @@
 
       const { data, error } = await supabase
         .from('feeds')
-        .select('id,fed_at,amount_ml,feed_type,side,notes')
+        .select('id,fed_at,amount_ml,feed_type,side,notes,duration_left_min,duration_right_min')
         .eq('baby_id', id)
         .gte('fed_at', start)
         .lte('fed_at', end)
@@ -330,14 +391,25 @@
       if (!data || data.length===0){ feedList().innerHTML = '<div class="muted">No feeds yet today.</div>'; todayTotals().textContent=''; return; }
 
       feedList().innerHTML = data.map(r=>{
-        const extra = (r.feed_type==='Breast' && r.side) ? `<div class="muted mt-1">Side: ${r.side}</div>` : '';
+        const extra = [];
+        if (r.feed_type==='Breast' && r.side) extra.push(`Side: ${r.side}`);
+        if (r.duration_left_min!=null || r.duration_right_min!=null){
+          const parts=[];
+          if (r.duration_left_min!=null) parts.push(`L ${r.duration_left_min}m`);
+          if (r.duration_right_min!=null) parts.push(`R ${r.duration_right_min}m`);
+          extra.push(parts.join(' / '));
+        }
         return `
           <div class="item">
             <div class="between">
               <div><strong>${r.feed_type}</strong> • ${fmtTime(r.fed_at)}</div>
-              <div class="badge">${fmtAmount(r.amount_ml)}</div>
+              <div class="row">
+                <button class="btn-ghost" onclick="easybaby.editFeed('${r.id}')">Edit</button>
+                <button class="btn-ghost" onclick="easybaby.deleteFeed('${r.id}')">Delete</button>
+                <div class="badge">${fmtAmount(r.amount_ml)}</div>
+              </div>
             </div>
-            ${extra}
+            ${extra.length?`<div class="muted mt-1">${extra.join(' • ')}</div>`:''}
             ${r.notes?`<div class="mt-1">${r.notes}</div>`:''}
           </div>
         `;
@@ -346,13 +418,17 @@
       const totalMl = data.reduce((sum,r)=> sum + (r.amount_ml||0), 0);
       const totalOz = Math.round((totalMl/29.5735)*10)/10;
       todayTotals().textContent = `Today: ${totalOz} oz (${totalMl} ml) across ${data.length} feed${data.length===1?'':'s'}.`;
+
+      // cache for edit button lookups
+      window.__todayFeeds = data.reduce((m,r)=> (m[r.id]=r,m), {});
     }
 
     // Expose handlers
     window.easybaby = {
       sendLink, logout, switchTab,
       createBaby, setActive,
-      saveFeed, updateFeedTypeVisibility
+      openFeedModal, closeFeedModal, updateFeedTypeVisibility, saveFeed, deleteFeed,
+      editFeed: (id)=> openFeedModal('edit', window.__todayFeeds?.[id] || null)
     };
 
     init();
@@ -392,72 +468,7 @@
         <section id="tab-activity" class="">
           <div class="between">
             <h2>Active Baby: <span id="active-baby-name" class="muted">No active baby — set one in Settings.</span></h2>
-          </div>
-
-          <!-- Log Feed -->
-          <div id="feed-wrap" class="mt-3 hidden">
-            <h2>Log Feed</h2>
-            <form onsubmit="easybaby.saveFeed(event)" class="grid">
-              <div class="grid grid-2">
-                <div>
-                  <label for="feed-when">Time</label>
-                  <input id="feed-when" type="datetime-local" />
-                </div>
-                <div>
-                  <label for="feed-type">Type</label>
-                  <select id="feed-type" onchange="easybaby.updateFeedTypeVisibility()">
-                    <option>Breast</option>
-                    <option>Formula</option>
-                    <option>Solid</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="grid grid-2">
-                <div>
-                  <label for="feed-amount">Amount</label>
-                  <input id="feed-amount" type="number" step="0.1" placeholder="e.g., 3" />
-                </div>
-                <div>
-                  <label for="feed-units">Units</label>
-                  <select id="feed-units">
-                    <option value="oz">oz</option>
-                    <option value="ml">ml</option>
-                  </select>
-                </div>
-              </div>
-
-              <div id="breast-row" class="grid grid-2 hidden">
-                <div>
-                  <label for="feed-side">Side</label>
-                  <select id="feed-side">
-                    <option value="">(either)</option>
-                    <option value="left">left</option>
-                    <option value="right">right</option>
-                  </select>
-                </div>
-                <div class="grid grid-2">
-                  <div>
-                    <label for="feed-dur-left">Duration L (min)</label>
-                    <input id="feed-dur-left" type="number" min="0" />
-                  </div>
-                  <div>
-                    <label for="feed-dur-right">Duration R (min)</label>
-                    <input id="feed-dur-right" type="number" min="0" />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label for="feed-notes">Notes</label>
-                <textarea id="feed-notes" placeholder="Optional notes…"></textarea>
-              </div>
-
-              <div class="row">
-                <button id="feed-save" type="submit">Save Feed</button>
-                <span id="feed-msg" class="muted"></span>
-              </div>
-            </form>
+            <button id="open-add-modal" onclick="easybaby.openFeedModal('create')" class="">+ Log Activity</button>
           </div>
 
           <!-- Today’s Feeds -->
@@ -500,6 +511,83 @@
           </div>
         </section>
       </div>
+    </div>
+  </div>
+
+  <!-- Feed Modal -->
+  <div id="modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal">
+      <header>
+        <h3 id="modal-title">Log Feed</h3>
+        <button class="close-x" onclick="easybaby.closeFeedModal()" aria-label="Close">×</button>
+      </header>
+      <main>
+        <form id="feed-form" onsubmit="easybaby.saveFeed(event)" class="grid">
+          <input type="hidden" id="feed-id" />
+          <div class="grid grid-2">
+            <div>
+              <label for="feed-when">Time</label>
+              <input id="feed-when" type="datetime-local" />
+            </div>
+            <div>
+              <label for="feed-type">Type</label>
+              <select id="feed-type" onchange="easybaby.updateFeedTypeVisibility()">
+                <option>Breast</option>
+                <option>Formula</option>
+                <option>Solid</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-2">
+            <div>
+              <label for="feed-amount">Amount</label>
+              <input id="feed-amount" type="number" step="0.1" placeholder="e.g., 3" />
+            </div>
+            <div>
+              <label for="feed-units">Units</label>
+              <select id="feed-units">
+                <option value="oz">oz</option>
+                <option value="ml">ml</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="breast-row" class="grid grid-2 hidden">
+            <div>
+              <label for="feed-side">Side</label>
+              <select id="feed-side">
+                <option value="">(either)</option>
+                <option value="left">left</option>
+                <option value="right">right</option>
+              </select>
+            </div>
+            <div class="grid grid-2">
+              <div>
+                <label for="feed-dur-left">Duration L (min)</label>
+                <input id="feed-dur-left" type="number" min="0" />
+              </div>
+              <div>
+                <label for="feed-dur-right">Duration R (min)</label>
+                <input id="feed-dur-right" type="number" min="0" />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label for="feed-notes">Notes</label>
+            <textarea id="feed-notes" placeholder="Optional notes…"></textarea>
+          </div>
+
+          <div class="row">
+            <span id="feed-msg" class="muted"></span>
+          </div>
+        </form>
+      </main>
+      <footer>
+        <button class="btn-ghost" id="feed-cancel" onclick="easybaby.closeFeedModal()">Cancel</button>
+        <button id="feed-save" onclick="document.getElementById('feed-form').requestSubmit()">Save</button>
+      </footer>
     </div>
   </div>
 </body>
