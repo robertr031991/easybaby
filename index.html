@@ -3,29 +3,38 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>EasyBaby — Baby Profiles</title>
+  <title>EasyBaby</title>
   <meta name="color-scheme" content="light dark" />
   <style>
     :root { --bg:#f9fafb; --card:#ffffff; --text:#111827; --muted:#6b7280; --line:#e5e7eb; --brand:#b45309; }
     * { box-sizing: border-box; }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; background:var(--bg); color:var(--text); }
-    .wrap { max-width: 720px; margin: 0 auto; padding: 24px; }
+    body { margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif; background:var(--bg); color:var(--text); }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 24px; }
     .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
     h1 { margin:0 0 8px; font-size:22px; }
     h2 { margin:16px 0 10px; font-size:18px; }
     p  { margin:0 0 14px; color:var(--muted); }
     label { display:block; font-size:12px; color:var(--muted); margin-bottom:6px; }
-    input, select { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; background:#fff; }
+    input, select, textarea { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; background:#fff; }
+    textarea { min-height:72px; resize:vertical; }
     button { appearance:none; border:none; background:var(--brand); color:#fff; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer; }
     .row { display:flex; gap:10px; align-items:center; }
-    .mt-2{ margin-top:8px; } .mt-3{ margin-top:12px; } .mt-4{ margin-top:16px; }
+    .between { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .grid { display:grid; gap:12px; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .mt-1{ margin-top:6px; } .mt-2{ margin-top:8px; } .mt-3{ margin-top:12px; } .mt-4{ margin-top:16px; }
     .muted { color: var(--muted); font-size:13px; }
     .hidden { display:none; }
     .list { display:grid; gap:10px; }
-    .item { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+    .item { padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; }
     .pill { background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; padding:4px 8px; border-radius:999px; font-size:12px; }
-    .ok { color:#065f46; }
-    .err { color:#b91c1c; }
+    .badge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid var(--line); background:#fff; }
+    .ok { color:#065f46; } .err { color:#b91c1c; }
+
+    /* Tabs */
+    .tabs { display:flex; gap:8px; margin: 10px 0 16px; }
+    .tab-btn { background:#fff; color:#374151; border:1px solid var(--line); padding:8px 12px; border-radius:999px; cursor:pointer; }
+    .tab-btn.active { background:#111827; color:#fff; border-color:#111827; }
   </style>
 
   <!-- Supabase JS (v2) from CDN + app script -->
@@ -37,176 +46,158 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mZ2Rhc2ZuaWR4eHpjeW1mdmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0NzYxNTksImV4cCI6MjA3MjA1MjE1OX0.hMk0myq85kUDUB-RXvb-Y5Xg36lLFWryVOi34x3ahYU';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    const views = {
-      signedOut: () => document.getElementById('view-signed-out'),
-      signedIn:  () => document.getElementById('view-signed-in'),
-      emailSent: () => document.getElementById('view-email-sent')
-    };
-    const emailInput = () => document.getElementById('email');
-    const statusEl   = () => document.getElementById('status');
+    const ACTIVE_KEY = 'easybaby.activeBabyId';
 
+    // Views
+    const v = {
+      out:   () => document.getElementById('view-signed-out'),
+      in:    () => document.getElementById('view-signed-in'),
+      sent:  () => document.getElementById('view-email-sent'),
+      activity: () => document.getElementById('tab-activity'),
+      settings: () => document.getElementById('tab-settings'),
+      tabs:  () => document.querySelectorAll('.tab-btn'),
+      status:() => document.getElementById('status')
+    };
+
+    // Settings (babies)
     const babyForm = {
       name: () => document.getElementById('baby-name'),
       dob:  () => document.getElementById('baby-dob'),
       tz:   () => document.getElementById('baby-tz'),
-      createBtn: () => document.getElementById('create-baby-btn'),
+      btn:  () => document.getElementById('create-baby-btn'),
       msg:  () => document.getElementById('create-msg')
     };
     const babyList = () => document.getElementById('baby-list');
-    const ACTIVE_KEY = 'easybaby.activeBabyId';
+    const activeName = () => document.getElementById('active-baby-name');
 
+    // Feed form (activity)
+    const feedForm = {
+      wrap:  () => document.getElementById('feed-wrap'),
+      when:  () => document.getElementById('feed-when'),
+      type:  () => document.getElementById('feed-type'),
+      amount:() => document.getElementById('feed-amount'),
+      units: () => document.getElementById('feed-units'),
+      side:  () => document.getElementById('feed-side'),
+      durL:  () => document.getElementById('feed-dur-left'),
+      durR:  () => document.getElementById('feed-dur-right'),
+      notes: () => document.getElementById('feed-notes'),
+      btn:   () => document.getElementById('feed-save'),
+      msg:   () => document.getElementById('feed-msg'),
+      breastRow: () => document.getElementById('breast-row')
+    };
+    const feedList = () => document.getElementById('feed-list');
+    const todayTotals = () => document.getElementById('today-totals');
+
+    // ---------- Auth boot ----------
     async function init() {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) console.error('getSession error:', error);
-      setView(session ? 'in' : 'out');
+      const { data: { session } } = await supabase.auth.getSession();
+      setAuthView(!!session);
       if (session) {
         setDefaultTimezone();
         await loadBabies();
+        await refreshActiveHeader();
+        setDefaultFeedTime();
+        updateFeedTypeVisibility();
+        await loadTodayFeeds();
       }
+      // open tab from hash if present
+      const initialTab = location.hash === '#settings' ? 'settings' : 'activity';
+      switchTab(initialTab);
     }
 
-    function setView(which) {
-      views.signedOut().classList.add('hidden');
-      views.signedIn().classList.add('hidden');
-      views.emailSent().classList.add('hidden');
-      if (which === 'out')  views.signedOut().classList.remove('hidden');
-      if (which === 'in')   views.signedIn().classList.remove('hidden');
-      if (which === 'sent') views.emailSent().classList.remove('hidden');
+    function setAuthView(signedIn) {
+      v.out().classList.toggle('hidden', signedIn);
+      v.in().classList.toggle('hidden', !signedIn);
+      v.sent().classList.add('hidden');
     }
 
-    // Send magic link
+    // Listen for auth state changes
+    supabase.auth.onAuthStateChange(async (_evt, session) => {
+      setAuthView(!!session);
+      if (session) {
+        await loadBabies();
+        await refreshActiveHeader();
+        await loadTodayFeeds();
+      }
+    });
+
+    // ---------- Tabs ----------
+    function switchTab(name) {
+      v.tabs().forEach(btn => btn.classList.remove('active'));
+      document.querySelector(`[data-tab="${name}"]`).classList.add('active');
+      v.activity().classList.add('hidden');
+      v.settings().classList.add('hidden');
+      if (name === 'activity') { v.activity().classList.remove('hidden'); location.hash = '#activity'; }
+      else { v.settings().classList.remove('hidden'); location.hash = '#settings'; }
+    }
+
+    // ---------- Login ----------
+    function emailInput(){ return document.getElementById('email'); }
     async function sendLink(e) {
       e.preventDefault();
-      statusEl().textContent = 'Sending magic link…';
+      v.status().textContent = 'Sending magic link…';
       const email = emailInput().value.trim();
-      if (!email) { statusEl().textContent = 'Enter an email.'; return; }
+      if (!email) { v.status().textContent = 'Enter an email.'; return; }
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: window.location.origin }
       });
-      if (error) statusEl().textContent = `Error: ${error.message}`;
-      else { statusEl().textContent = ''; setView('sent'); }
+      if (error) v.status().textContent = `Error: ${error.message}`;
+      else { v.status().textContent = ''; v.out().classList.add('hidden'); v.sent().classList.remove('hidden'); }
     }
-
-    // Sign out
     async function logout() {
       await supabase.auth.signOut();
-      setView('out');
+      switchTab('activity');
     }
 
-    // Auth change → refresh babies list
-    supabase.auth.onAuthStateChange(async (_event, session) => {
-      setView(session ? 'in' : 'out');
-      if (session) {
-        setDefaultTimezone();
-        await loadBabies();
-      }
-    });
-
+    // ---------- Settings: Babies ----------
     function setDefaultTimezone() {
-      try {
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
-        babyForm.tz().value = tz;
-      } catch { babyForm.tz().value = 'America/New_York'; }
+      try { babyForm.tz().value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'; }
+      catch { babyForm.tz().value = 'America/New_York'; }
     }
 
-    // Simple timeout wrapper so requests can't hang forever
-    async function withTimeout(promise, ms = 10000) {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), ms);
-      try {
-        const res = await promise(ctrl.signal);
-        clearTimeout(t);
-        return res;
-      } catch (e) {
-        clearTimeout(t);
-        throw e;
-      }
-    }
-
-    // Create baby (simplified insert + clear on success)
     async function createBaby(e) {
       e.preventDefault();
-
-      const btn = babyForm.createBtn();
-      btn.disabled = true;
-      const prevText = btn.textContent;
-      btn.textContent = 'Saving…';
-      babyForm.msg().textContent = '';
-      babyForm.msg().className = 'muted';
+      const btn = babyForm.btn();
+      btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Saving…';
+      babyForm.msg().textContent = ''; babyForm.msg().className = 'muted';
 
       try {
         const name = babyForm.name().value.trim();
-        const dob  = babyForm.dob().value; // yyyy-mm-dd from <input type="date">
+        const dob  = babyForm.dob().value;
         const tz   = babyForm.tz().value.trim() || 'America/New_York';
-        if (!name || !dob) {
-          babyForm.msg().textContent = 'Please enter name and date of birth.';
-          babyForm.msg().className = 'err';
-          return;
-        }
+        if (!name || !dob) { babyForm.msg().textContent = 'Enter name and DOB.'; babyForm.msg().className='err'; return; }
 
-        const { data: { user }, error: uerr } = await supabase.auth.getUser();
-        if (uerr) throw uerr;
+        const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not signed in');
 
-        // Important: do NOT use .select().single() (can hang when RLS filters result)
-        const insertCall = async (signal) => {
-          return await supabase
-            .from('babies')
-            .insert([{ owner_id: user.id, name, dob, timezone: tz, day_start_hour: 0 }], { returning: 'minimal' })
-            .abortSignal(signal);
-        };
-
-        const { error } = await withTimeout(insertCall, 10000);
+        const { error } = await supabase
+          .from('babies')
+          .insert([{ owner_id: user.id, name, dob, timezone: tz, day_start_hour: 0 }], { returning:'minimal' });
         if (error) throw error;
 
-        babyForm.msg().textContent = 'Saved!';
-        babyForm.msg().className = 'ok';
-        // Clear fields
-        babyForm.name().value = '';
-        babyForm.dob().value = '';
+        babyForm.msg().textContent = 'Saved!'; babyForm.msg().className='ok';
+        babyForm.name().value=''; babyForm.dob().value='';
         await loadBabies();
-
       } catch (err) {
-        console.error('createBaby error:', err);
-        const msg = err?.message || String(err);
-        if (msg.includes('row-level security')) {
-          babyForm.msg().textContent = 'Permission error (RLS). Double-check you are signed in.';
-        } else {
-          babyForm.msg().textContent = 'Error creating baby: ' + msg;
-        }
-        babyForm.msg().className = 'err';
-      } finally {
-        btn.disabled = false;
-        btn.textContent = prevText;
-      }
+        babyForm.msg().textContent = 'Error: ' + (err?.message || String(err));
+        babyForm.msg().className='err';
+      } finally { btn.disabled=false; btn.textContent=prev; }
     }
 
-    // Load babies you can see (owner/membership via RLS)
     async function loadBabies() {
       babyList().innerHTML = '<div class="muted">Loading…</div>';
-
       const { data, error } = await supabase
         .from('babies')
-        .select('id,name,dob,timezone,created_at,owner_id')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('loadBabies error:', error);
-        babyList().innerHTML = '<div class="err">Error loading babies: ' + (error.message || '') + '</div>';
-        return;
-      }
-
+        .select('id,name,dob,timezone,created_at')
+        .order('created_at',{ascending:false});
+      if (error){ babyList().innerHTML = '<div class="err">Error loading babies.</div>'; return; }
       const activeId = localStorage.getItem(ACTIVE_KEY);
-      if (!data || data.length === 0) {
-        babyList().innerHTML = '<div class="muted">No babies yet. Create one above.</div>';
-        return;
-      }
+      if (!data || data.length===0){ babyList().innerHTML = '<div class="muted">No babies yet. Create one above.</div>'; return; }
 
-      babyList().innerHTML = data.map(b => {
-        const isActive = b.id === activeId;
-        const dob = new Date(b.dob + 'T00:00:00');
-        const ageMonths = Math.max(0, Math.floor((Date.now() - dob.getTime()) / (1000*60*60*24*30.437)));
+      babyList().innerHTML = data.map(b=>{
+        const isActive = b.id===activeId;
+        const ageMonths = Math.max(0, Math.floor((Date.now()-new Date(b.dob+'T00:00:00').getTime())/(1000*60*60*24*30.437)));
         return `
           <div class="item" data-baby="${b.id}">
             <div>
@@ -222,16 +213,131 @@
       }).join('');
     }
 
-    function setActive(id) {
-      localStorage.setItem(ACTIVE_KEY, id);
-      document.querySelectorAll('.active-badge').forEach(el => el.classList.add('hidden'));
-      const badge = document.querySelector(`[data-baby="${id}"] .active-badge`);
-      if (badge) badge.classList.remove('hidden');
+    async function refreshActiveHeader() {
+      const id = localStorage.getItem(ACTIVE_KEY);
+      if (!id){ activeName().textContent = 'No active baby — set one in Settings.'; feedForm.wrap().classList.add('hidden'); return; }
+      const { data, error } = await supabase.from('babies').select('name').eq('id', id).single();
+      if (error || !data){ activeName().textContent='Active baby not found'; feedForm.wrap().classList.add('hidden'); return; }
+      activeName().textContent = data.name;
+      feedForm.wrap().classList.remove('hidden');
     }
 
-    // Expose handlers
-    window.easybaby = { sendLink, logout, createBaby, setActive };
+    function setActive(id) {
+      localStorage.setItem(ACTIVE_KEY, id);
+      document.querySelectorAll('.active-badge').forEach(el=>el.classList.add('hidden'));
+      const badge = document.querySelector(`[data-baby="${id}"] .active-badge`);
+      if (badge) badge.classList.remove('hidden');
+      refreshActiveHeader();
+      loadTodayFeeds();
+      switchTab('activity'); // bounce to Activity after setting
+    }
 
+    // ---------- Activity: Feeds ----------
+    function setDefaultFeedTime(){
+      const now = new Date();
+      const pad = n => String(n).padStart(2,'0');
+      feedForm.when().value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    }
+    function updateFeedTypeVisibility(){
+      const t = feedForm.type().value;
+      if (t==='Breast'){ feedForm.breastRow().classList.remove('hidden'); }
+      else { feedForm.breastRow().classList.add('hidden'); }
+    }
+    function toMl(amount, units){
+      if (!amount) return null;
+      const n = Number(amount);
+      if (Number.isNaN(n)) return null;
+      return units==='ml' ? Math.round(n) : Math.round(n*29.5735);
+    }
+    async function saveFeed(e){
+      e.preventDefault();
+      const id = localStorage.getItem(ACTIVE_KEY);
+      if (!id){ feedForm.msg().textContent='Set an active baby in Settings first.'; feedForm.msg().className='err'; return; }
+
+      const btn = feedForm.btn(); const prev=btn.textContent; btn.disabled=true; btn.textContent='Saving…';
+      feedForm.msg().textContent=''; feedForm.msg().className='muted';
+
+      try{
+        const when = new Date(feedForm.when().value);
+        if (isNaN(when.getTime())) throw new Error('Invalid date/time');
+
+        const type = feedForm.type().value; // Breast, Formula, Solid
+        const amount = toMl(feedForm.amount().value, feedForm.units().value);
+        const side = type==='Breast' ? feedForm.side().value || null : null;
+        const durL = type==='Breast' ? (feedForm.durL().value ? Number(feedForm.durL().value) : null) : null;
+        const durR = type==='Breast' ? (feedForm.durR().value ? Number(feedForm.durR().value) : null) : null;
+        const notes = feedForm.notes().value.trim() || null;
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not signed in');
+
+        const payload = { baby_id:id, user_id:user.id, fed_at:when.toISOString(), amount_ml:amount, feed_type:type, side, duration_left_min:durL, duration_right_min:durR, notes };
+        const { error } = await supabase.from('feeds').insert([payload], { returning:'minimal' });
+        if (error) throw error;
+
+        feedForm.msg().textContent = 'Saved!'; feedForm.msg().className='ok';
+        feedForm.amount().value=''; feedForm.notes().value='';
+        await loadTodayFeeds();
+      }catch(err){
+        feedForm.msg().textContent = 'Error: ' + (err?.message || String(err));
+        feedForm.msg().className='err';
+      }finally{
+        btn.disabled=false; btn.textContent=prev;
+      }
+    }
+
+    function todayRangeISO(){
+      const start = new Date(); start.setHours(0,0,0,0);
+      const end = new Date();
+      return [start.toISOString(), end.toISOString()];
+    }
+    function fmtTime(d){ return new Date(d).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); }
+    function fmtAmount(ml){ if (ml==null) return ''; const oz = Math.round((ml/29.5735)*10)/10; return `${oz} oz (${ml} ml)`; }
+
+    async function loadTodayFeeds(){
+      const id = localStorage.getItem(ACTIVE_KEY);
+      if (!id){ feedList().innerHTML='<div class="muted">Set an active baby to see today’s feeds.</div>'; todayTotals().textContent=''; return; }
+      const [start,end] = todayRangeISO();
+      feedList().innerHTML = '<div class="muted">Loading…</div>';
+
+      const { data, error } = await supabase
+        .from('feeds')
+        .select('id,fed_at,amount_ml,feed_type,side,notes')
+        .eq('baby_id', id)
+        .gte('fed_at', start)
+        .lte('fed_at', end)
+        .order('fed_at', { ascending:false });
+
+      if (error){ feedList().innerHTML = '<div class="err">Error loading feeds.</div>'; todayTotals().textContent=''; return; }
+      if (!data || data.length===0){ feedList().innerHTML = '<div class="muted">No feeds yet today.</div>'; todayTotals().textContent=''; return; }
+
+      feedList().innerHTML = data.map(r=>{
+        const extra = (r.feed_type==='Breast' && r.side) ? `<div class="muted mt-1">Side: ${r.side}</div>` : '';
+        return `
+          <div class="item">
+            <div class="between">
+              <div><strong>${r.feed_type}</strong> • ${fmtTime(r.fed_at)}</div>
+              <div class="badge">${fmtAmount(r.amount_ml)}</div>
+            </div>
+            ${extra}
+            ${r.notes?`<div class="mt-1">${r.notes}</div>`:''}
+          </div>
+        `;
+      }).join('');
+
+      const totalMl = data.reduce((sum,r)=> sum + (r.amount_ml||0), 0);
+      const totalOz = Math.round((totalMl/29.5735)*10)/10;
+      todayTotals().textContent = `Today: ${totalOz} oz (${totalMl} ml) across ${data.length} feed${data.length===1?'':'s'}.`;
+    }
+
+    // Expose handlers globally for buttons/forms
+    window.easybaby = {
+      sendLink, logout, switchTab,
+      createBaby, setActive,
+      saveFeed, updateFeedTypeVisibility
+    };
+
+    // Kick off
     init();
   </script>
 </head>
@@ -239,7 +345,13 @@
   <div class="wrap">
     <div class="card">
       <h1>EasyBaby</h1>
-      <p class="muted">Sign in with a magic link, then create your baby profile.</p>
+      <p class="muted">Log daily activities on the <strong>Activity</strong> tab. Manage profiles on <strong>Settings</strong>.</p>
+
+      <!-- Tabs (only visible when signed in) -->
+      <div class="tabs hidden" id="tabs">
+        <button class="tab-btn" data-tab="activity" onclick="easybaby.switchTab('activity')">Activity</button>
+        <button class="tab-btn" data-tab="settings" onclick="easybaby.switchTab('settings')">Settings</button>
+      </div>
 
       <!-- Signed OUT -->
       <form id="view-signed-out" onsubmit="easybaby.sendLink(event)">
@@ -256,33 +368,126 @@
       </div>
 
       <!-- Signed IN -->
-      <div id="view-signed-in" class="hidden mt-4">
-        <h2>Create Baby</h2>
-        <form onsubmit="easybaby.createBaby(event)">
-          <div class="mt-2">
-            <label for="baby-name">Name</label>
-            <input id="baby-name" type="text" placeholder="e.g., Peyton" required />
-          </div>
-          <div class="mt-2">
-            <label for="baby-dob">Date of Birth</label>
-            <input id="baby-dob" type="date" required />
-          </div>
-          <div class="mt-2">
-            <label for="baby-tz">Timezone</label>
-            <input id="baby-tz" type="text" placeholder="America/New_York" />
-          </div>
-          <div class="row mt-3">
-            <button id="create-baby-btn" type="submit">Create Baby</button>
-            <span id="create-msg" class="muted"></span>
-          </div>
-        </form>
+      <div id="view-signed-in" class="hidden mt-2">
+        <script>
+          // Reveal tabs when signed in (tiny inline helper to avoid module scope issues)
+          document.addEventListener('DOMContentLoaded', ()=> {
+            const tabs = document.getElementById('tabs');
+            if (tabs) tabs.classList.remove('hidden');
+          });
+        </script>
 
-        <h2 class="mt-4">Your Babies</h2>
-        <div id="baby-list" class="list"></div>
+        <!-- ACTIVITY TAB -->
+        <section id="tab-activity" class="">
+          <div class="between">
+            <h2>Active Baby: <span id="active-baby-name" class="muted">No active baby — set one in Settings.</span></h2>
+          </div>
 
-        <div class="mt-4">
-          <button onclick="easybaby.logout()">Sign out</button>
-        </div>
+          <!-- Log Feed -->
+          <div id="feed-wrap" class="mt-3 hidden">
+            <h2>Log Feed</h2>
+            <form onsubmit="easybaby.saveFeed(event)" class="grid">
+              <div class="grid grid-2">
+                <div>
+                  <label for="feed-when">Time</label>
+                  <input id="feed-when" type="datetime-local" />
+                </div>
+                <div>
+                  <label for="feed-type">Type</label>
+                  <select id="feed-type" onchange="easybaby.updateFeedTypeVisibility()">
+                    <option>Breast</option>
+                    <option>Formula</option>
+                    <option>Solid</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid grid-2">
+                <div>
+                  <label for="feed-amount">Amount</label>
+                  <input id="feed-amount" type="number" step="0.1" placeholder="e.g., 3" />
+                </div>
+                <div>
+                  <label for="feed-units">Units</label>
+                  <select id="feed-units">
+                    <option value="oz">oz</option>
+                    <option value="ml">ml</option>
+                  </select>
+                </div>
+              </div>
+
+              <div id="breast-row" class="grid grid-2 hidden">
+                <div>
+                  <label for="feed-side">Side</label>
+                  <select id="feed-side">
+                    <option value="">(either)</option>
+                    <option value="left">left</option>
+                    <option value="right">right</option>
+                  </select>
+                </div>
+                <div class="grid grid-2">
+                  <div>
+                    <label for="feed-dur-left">Duration L (min)</label>
+                    <input id="feed-dur-left" type="number" min="0" />
+                  </div>
+                  <div>
+                    <label for="feed-dur-right">Duration R (min)</label>
+                    <input id="feed-dur-right" type="number" min="0" />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label for="feed-notes">Notes</label>
+                <textarea id="feed-notes" placeholder="Optional notes…"></textarea>
+              </div>
+
+              <div class="row">
+                <button id="feed-save" type="submit">Save Feed</button>
+                <span id="feed-msg" class="muted"></span>
+              </div>
+            </form>
+          </div>
+
+          <!-- Today’s Feeds -->
+          <div class="mt-4">
+            <div class="between">
+              <h2>Today’s Feeds</h2>
+              <div id="today-totals" class="muted"></div>
+            </div>
+            <div id="feed-list" class="list"></div>
+          </div>
+        </section>
+
+        <!-- SETTINGS TAB -->
+        <section id="tab-settings" class="hidden">
+          <h2>Create Baby</h2>
+          <form onsubmit="easybaby.createBaby(event)">
+            <div class="mt-2">
+              <label for="baby-name">Name</label>
+              <input id="baby-name" type="text" placeholder="e.g., Peyton" required />
+            </div>
+            <div class="mt-2">
+              <label for="baby-dob">Date of Birth</label>
+              <input id="baby-dob" type="date" required />
+            </div>
+            <div class="mt-2">
+              <label for="baby-tz">Timezone</label>
+              <input id="baby-tz" type="text" placeholder="America/New_York" />
+            </div>
+            <div class="row mt-3">
+              <button id="create-baby-btn" type="submit">Create Baby</button>
+              <span id="create-msg" class="muted"></span>
+            </div>
+          </form>
+
+          <h2 class="mt-4">Your Babies</h2>
+          <div id="baby-list" class="list"></div>
+
+          <div class="mt-4">
+            <button onclick="easybaby.logout()">Sign out</button>
+          </div>
+        </section>
       </div>
     </div>
   </div>
