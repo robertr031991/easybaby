@@ -48,11 +48,28 @@
     .close-x { background:transparent; color:#6b7280; border:none; font-size:20px; line-height:1; cursor:pointer; }
   </style>
 
-  <!-- Supabase JS (v2) -->
+  <!-- App script -->
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-    // Supabase project (anon key is OK in browser)
+    /* ===== One-time auto-reload after new deploy ===== */
+    const APP_VERSION = 'v0.2.1'; // bump this whenever you deploy updates
+    try {
+      const prev = localStorage.getItem('APP_VERSION');
+      if (prev && prev !== APP_VERSION) {
+        localStorage.setItem('APP_VERSION', APP_VERSION);
+        // Add a cache-busting query parameter and reload once
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('v') !== APP_VERSION) {
+          url.searchParams.set('v', APP_VERSION);
+          window.location.replace(url.toString());
+        }
+      } else if (!prev) {
+        localStorage.setItem('APP_VERSION', APP_VERSION);
+      }
+    } catch {}
+
+    /* ===== Supabase ===== */
     const SUPABASE_URL = 'https://mfgdasfnidxxzcymfvfx.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mZ2Rhc2ZuaWR4eHpjeW1mdmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0NzYxNTksImV4cCI6MjA3MjA1MjE1OX0.hMk0myq85kUDUB-RXvb-Y5Xg36lLFWryVOi34x3ahYU';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -109,7 +126,10 @@
 
     // ---------- Auth boot ----------
     async function init() {
+      // Refresh session so an old tab doesn’t hold a stale token
+      try { await supabase.auth.refreshSession(); } catch {}
       const { data: { session } } = await supabase.auth.getSession();
+
       setAuthView(!!session);
       if (session) {
         await showWhoAmI();
@@ -402,11 +422,11 @@
         return `
           <div class="item">
             <div class="between">
-              <div><strong>${r.feed_type}</strong> • ${fmtTime(r.fed_at)}</div>
+              <div><strong>${r.feed_type}</strong> • ${new Date(r.fed_at).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' })}</div>
               <div class="row">
                 <button class="btn-ghost" onclick="easybaby.editFeed('${r.id}')">Edit</button>
                 <button class="btn-ghost" onclick="easybaby.deleteFeed('${r.id}')">Delete</button>
-                <div class="badge">${fmtAmount(r.amount_ml)}</div>
+                <div class="badge">${(r.amount_ml==null?'':`${Math.round((r.amount_ml/29.5735)*10)/10} oz (${r.amount_ml} ml)`)}</div>
               </div>
             </div>
             ${extra.length?`<div class="muted mt-1">${extra.join(' • ')}</div>`:''}
@@ -431,6 +451,7 @@
       editFeed: (id)=> openFeedModal('edit', window.__todayFeeds?.[id] || null)
     };
 
+    // Kick off
     init();
   </script>
 </head>
