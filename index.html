@@ -3,33 +3,35 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>EasyBaby — Sign In</title>
+  <title>EasyBaby — Baby Profiles</title>
   <meta name="color-scheme" content="light dark" />
   <style>
     :root { --bg:#f9fafb; --card:#ffffff; --text:#111827; --muted:#6b7280; --line:#e5e7eb; --brand:#b45309; }
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; background:var(--bg); color:var(--text); }
-    .wrap { max-width: 480px; margin: 0 auto; padding: 24px; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 24px; }
     .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
     h1 { margin:0 0 8px; font-size:22px; }
+    h2 { margin:16px 0 10px; font-size:18px; }
     p  { margin:0 0 14px; color:var(--muted); }
-    input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; }
+    input, select { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; }
     button { appearance:none; border:none; background:var(--brand); color:#fff; padding:10px 14px; border-radius:10px; font-weight:600; cursor:pointer; }
     .row { display:flex; gap:10px; align-items:center; }
-    .center { text-align:center; }
     .mt-2{ margin-top:8px; } .mt-3{ margin-top:12px; } .mt-4{ margin-top:16px; }
     .muted { color: var(--muted); font-size:13px; }
     .hidden { display:none; }
+    .list { display:grid; gap:10px; }
+    .item { display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+    .pill { background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; padding:4px 8px; border-radius:999px; font-size:12px; }
   </style>
 
   <!-- Supabase JS (v2) from CDN + app script -->
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-    // Using your provided values:
+    // Your Supabase project values (anon key is OK in browser)
     const SUPABASE_URL = 'https://mfgdasfnidxxzcymfvfx.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mZ2Rhc2ZuaWR4eHpjeW1mdmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0NzYxNTksImV4cCI6MjA3MjA1MjE1OX0.hMk0myq85kUDUB-RXvb-Y5Xg36lLFWryVOi34x3ahYU';
-
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const views = {
@@ -40,10 +42,27 @@
     const emailInput = () => document.getElementById('email');
     const statusEl   = () => document.getElementById('status');
 
+    const babyForm = {
+      name: () => document.getElementById('baby-name'),
+      dob:  () => document.getElementById('baby-dob'),
+      tz:   () => document.getElementById('baby-tz'),
+      createBtn: () => document.getElementById('create-baby-btn')
+    };
+    const babyList = () => document.getElementById('baby-list');
+    const activeBadge = (id) => document.querySelector(`[data-baby="${id}"] .active-badge`);
+
+    const ACTIVE_KEY = 'easybaby.activeBabyId';
+
+    // Initialize UI based on current session
     async function init() {
-      // Ensure Supabase knows where to send the magic-link back
       const { data: { session } } = await supabase.auth.getSession();
-      setView(session ? 'in' : 'out');
+      if (session) {
+        setView('in');
+        setDefaultTimezone();
+        await loadBabies();
+      } else {
+        setView('out');
+      }
     }
 
     function setView(which) {
@@ -61,7 +80,6 @@
       statusEl().textContent = 'Sending magic link…';
       const email = emailInput().value.trim();
       if (!email) { statusEl().textContent = 'Enter an email.'; return; }
-
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: window.location.origin }
@@ -76,14 +94,117 @@
       setView('out');
     }
 
-    // React to auth state (after clicking the email link)
-    supabase.auth.onAuthStateChange((_event, session) => {
-      setView(session ? 'in' : 'out');
+    // Auth state changes (after clicking the email link)
+    supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        setView('in');
+        setDefaultTimezone();
+        await loadBabies();
+      } else {
+        setView('out');
+      }
     });
 
-    // Expose handlers
-    window.easybaby = { sendLink, logout };
+    function setDefaultTimezone() {
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
+        babyForm.tz().value = tz;
+      } catch { babyForm.tz().value = 'America/New_York'; }
+    }
 
+    // Create baby
+    async function createBaby(e) {
+      e.preventDefault();
+      babyForm.createBtn().disabled = true;
+      babyForm.createBtn().textContent = 'Saving…';
+
+      const name = babyForm.name().value.trim();
+      const dob  = babyForm.dob().value; // yyyy-mm-dd
+      const tz   = babyForm.tz().value.trim() || 'America/New_York';
+      if (!name || !dob) {
+        alert('Please enter name and date of birth.');
+        babyForm.createBtn().disabled = false;
+        babyForm.createBtn().textContent = 'Create Baby';
+        return;
+      }
+
+      const { data: { user }, error: uerr } = await supabase.auth.getUser();
+      if (uerr || !user) { alert('Not signed in.'); return; }
+
+      // Insert baby; owner_id must equal auth.uid() (RLS rule)
+      const { error } = await supabase.from('babies').insert({
+        owner_id: user.id,
+        name,
+        dob,           // stored as DATE
+        timezone: tz,
+        day_start_hour: 0
+      });
+
+      if (error) {
+        alert('Error creating baby: ' + error.message);
+      } else {
+        // Clear form and refresh list
+        babyForm.name().value = '';
+        babyForm.dob().value = '';
+        await loadBabies();
+      }
+
+      babyForm.createBtn().disabled = false;
+      babyForm.createBtn().textContent = 'Create Baby';
+    }
+
+    // Load babies owned by the current user (owner can read; members read via policy too)
+    async function loadBabies() {
+      babyList().innerHTML = '<div class="muted">Loading…</div>';
+
+      // We show babies where you are owner. (Later we’ll UNION shared memberships.)
+      const { data, error } = await supabase
+        .from('babies')
+        .select('id,name,dob,timezone,created_at,owner_id')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        babyList().innerHTML = '<div class="muted">Error loading babies.</div>';
+        return;
+      }
+
+      const activeId = localStorage.getItem(ACTIVE_KEY);
+      if (!data || data.length === 0) {
+        babyList().innerHTML = '<div class="muted">No babies yet. Create one above.</div>';
+        return;
+      }
+
+      babyList().innerHTML = data.map(b => {
+        const isActive = b.id === activeId;
+        const dob = new Date(b.dob + 'T00:00:00');
+        const ageMonths = Math.max(0, Math.floor((Date.now() - dob.getTime()) / (1000*60*60*24*30.437)));
+        return `
+          <div class="item" data-baby="${b.id}">
+            <div>
+              <div><strong>${b.name}</strong> <span class="muted">(${ageMonths} mo)</span></div>
+              <div class="muted">DOB: ${b.dob} • TZ: ${b.timezone}</div>
+            </div>
+            <div class="row">
+              ${isActive ? '<span class="pill active-badge">Active</span>' : '<span class="active-badge hidden pill">Active</span>'}
+              <button onclick="easybaby.setActive('${b.id}')">Set Active</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Set active baby in browser (for now). We’ll store in DB later if you want cross-device default.
+    function setActive(id) {
+      localStorage.setItem(ACTIVE_KEY, id);
+      document.querySelectorAll('.active-badge').forEach(el => el.classList.add('hidden'));
+      const badge = activeBadge(id);
+      if (badge) badge.classList.remove('hidden');
+    }
+
+    // Expose handlers
+    window.easybaby = { sendLink, logout, createBaby, setActive };
+
+    // Kick things off
     init();
   </script>
 </head>
@@ -91,7 +212,7 @@
   <div class="wrap">
     <div class="card">
       <h1>EasyBaby</h1>
-      <p class="muted">Sign in with a magic link to start tracking feeds, naps, diapers, and more.</p>
+      <p class="muted">Sign in with a magic link, then create your baby profile.</p>
 
       <!-- Signed OUT -->
       <form id="view-signed-out" onsubmit="easybaby.sendLink(event)">
@@ -103,14 +224,33 @@
       </form>
 
       <!-- Email SENT -->
-      <div id="view-email-sent" class="hidden center mt-4">
+      <div id="view-email-sent" class="hidden mt-4">
         <p>✅ Check your email for the magic link. Open it on this device.</p>
       </div>
 
       <!-- Signed IN -->
       <div id="view-signed-in" class="hidden mt-4">
-        <p>✅ You’re signed in.</p>
-        <button onclick="easybaby.logout()" class="mt-2">Sign out</button>
+        <h2>Create Baby</h2>
+        <form onsubmit="easybaby.createBaby(event)">
+          <div class="mt-2">
+            <label for="baby-name" class="muted">Name</label>
+            <input id="baby-name" type="text" placeholder="e.g., Peyton" required />
+          </div>
+          <div class="mt-2">
+            <label for="baby-dob" class="muted">Date of Birth</label>
+            <input id="baby-dob" type="date" required />
+          </div>
+          <div class="mt-2">
+            <label for="baby-tz" class="muted">Timezone</label>
+            <input id="baby-tz" type="text" placeholder="America/New_York" />
+          </div>
+          <div class="row mt-3">
+            <button id="create-baby-btn" type="submit">Create Baby</button>
+          </div>
+        </form>
+
+        <h2 class="mt-4">Your Babies</h2>
+        <div id="baby-list" class="list"></div>
       </div>
     </div>
   </div>
