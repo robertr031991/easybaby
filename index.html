@@ -33,12 +33,10 @@
     .ok { color:#065f46; } .err { color:#b91c1c; }
     .note { font-size:12px; background:#fff; border:1px dashed #e5e7eb; padding:8px 10px; border-radius:8px; margin-top:8px; }
 
-    /* Tabs */
     .tabs { display:flex; gap:8px; margin: 10px 0 16px; }
     .tab-btn { background:#fff; color:#374151; border:1px solid var(--line); padding:8px 12px; border-radius:999px; cursor:pointer; }
     .tab-btn.active { background:#111827; color:#fff; border-color:#111827; }
 
-    /* Modal */
     .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; padding:16px; }
     .modal { width:100%; max-width:560px; background:#fff; border-radius:16px; border:1px solid var(--line); box-shadow:0 20px 60px rgba(0,0,0,.25); }
     .modal header { padding:16px 18px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
@@ -47,70 +45,91 @@
     .close-x { background:transparent; color:#6b7280; border:none; font-size:20px; line-height:1; cursor:pointer; }
   </style>
 
-  <!-- App script -->
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-    /* ===== One-time auto-reload after new deploy ===== */
-    const APP_VERSION = 'v0.2.2';
-    try {
-      const prev = localStorage.getItem('APP_VERSION');
-      if (prev && prev !== APP_VERSION) {
-        localStorage.setItem('APP_VERSION', APP_VERSION);
-        const url = new URL(window.location.href);
-        if (url.searchParams.get('v') !== APP_VERSION) {
-          url.searchParams.set('v', APP_VERSION);
-          window.location.replace(url.toString());
-        }
-      } else if (!prev) {
-        localStorage.setItem('APP_VERSION', APP_VERSION);
-      }
-    } catch {}
-
-    /* ===== Supabase ===== */
+    /* ─────────── Supabase client (your project) ─────────── */
     const SUPABASE_URL = 'https://mfgdasfnidxxzcymfvfx.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mZ2Rhc2ZuaWR4eHpjeW1mdmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0NzYxNTksImV4cCI6MjA3MjA1MjE1OX0.hMk0myq85kUDUB-RXvb-Y5Xg36lLFWryVOi34x3ahYU';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const ACTIVE_KEY = 'easybaby.activeBabyId';
 
-    // Elements
+    /* ─────────── Helpers ─────────── */
     const el = (id)=>document.getElementById(id);
     const v = {
-      out:   ()=> el('view-signed-out'),
-      in:    ()=> el('view-signed-in'),
-      sent:  ()=> el('view-email-sent'),
-      tabs:  ()=> el('tabs'),
-      activity: ()=> el('tab-activity'),
-      settings: ()=> el('tab-settings'),
-      status:()=> el('status'),
-      who:   ()=> el('whoami'),
-      tabBtns:()=> document.querySelectorAll('.tab-btn'),
-      activeName:()=> el('active-baby-name'),
-      babyList: ()=> el('baby-list'),
-      todayTotals:()=> el('today-totals'),
-      feedList: ()=> el('feed-list'),
+      out:()=>el('view-signed-out'),
+      in:()=>el('view-signed-in'),
+      sent:()=>el('view-email-sent'),
+      tabs:()=>el('tabs'),
+      activity:()=>el('tab-activity'),
+      settings:()=>el('tab-settings'),
+      who:()=>el('whoami'),
+      tabBtns:()=>document.querySelectorAll('.tab-btn'),
+      activeName:()=>el('active-baby-name'),
+      babyList:()=>el('baby-list'),
+      feedList:()=>el('feed-list'),
+      todayTotals:()=>el('today-totals'),
       // modal
-      modalBackdrop: ()=> el('modal-backdrop'),
-      modalTitle: ()=> el('modal-title'),
-      feedForm: ()=> el('feed-form'),
-      feedWhen: ()=> el('feed-when'),
-      feedType: ()=> el('feed-type'),
-      feedAmount:()=> el('feed-amount'),
-      feedUnits: ()=> el('feed-units'),
-      feedSide:  ()=> el('feed-side'),
-      feedDurL:  ()=> el('feed-dur-left'),
-      feedDurR:  ()=> el('feed-dur-right'),
-      feedNotes: ()=> el('feed-notes'),
-      feedBreastRow: ()=> el('breast-row'),
-      feedSave: ()=> el('feed-save'),
-      feedMsg:  ()=> el('feed-msg'),
-      feedId:   ()=> el('feed-id')
+      mBack:()=>el('modal-backdrop'),
+      mTitle:()=>el('modal-title'),
+      fForm:()=>el('feed-form'),
+      fWhen:()=>el('feed-when'),
+      fType:()=>el('feed-type'),
+      fAmt:()=>el('feed-amount'),
+      fUnits:()=>el('feed-units'),
+      fSide:()=>el('feed-side'),
+      fDurL:()=>el('feed-dur-left'),
+      fDurR:()=>el('feed-dur-right'),
+      fNotes:()=>el('feed-notes'),
+      fBreastRow:()=>el('breast-row'),
+      fSave:()=>el('feed-save'),
+      fMsg:()=>el('feed-msg'),
+      fId:()=>el('feed-id'),
+      status:()=>el('status')
     };
 
-    /* ---------- Auth boot with auto-heal ---------- */
+    /* ─────────── Auth deep-link handling (fixes loop) ─────────── */
+    async function consumeAuthFromUrl() {
+      const url = new URL(window.location.href);
+
+      // 1) OAuth/PKCE style: ?code=...
+      const code = url.searchParams.get('code');
+      if (code) {
+        try { await supabase.auth.exchangeCodeForSession(code); } catch {}
+        url.searchParams.delete('code');
+        url.searchParams.delete('state');
+      }
+
+      // 2) OTP magic link style: ?token_hash=...&type=...&email=...
+      const token_hash = url.searchParams.get('token_hash');
+      const type = url.searchParams.get('type');  // "signup" or "magiclink"
+      const email = url.searchParams.get('email');
+      if (token_hash && type) {
+        try { await supabase.auth.verifyOtp({ type, token_hash, email }); } catch {}
+        ['token_hash','type','email'].forEach(p=>url.searchParams.delete(p));
+      }
+
+      // 3) Hash tokens (access_token/refresh_token in #...)
+      if (location.hash.includes('access_token')) {
+        const hash = new URLSearchParams(location.hash.slice(1));
+        const access_token = hash.get('access_token');
+        const refresh_token = hash.get('refresh_token');
+        if (access_token && refresh_token) {
+          try { await supabase.auth.setSession({ access_token, refresh_token }); } catch {}
+        }
+        history.replaceState({}, '', url.pathname + url.search); // clear hash
+      } else {
+        history.replaceState({}, '', url.pathname + url.search);
+      }
+    }
+
+    /* ─────────── App init ─────────── */
     async function init() {
-      // 1) Refresh session so a stale tab doesn’t hold an expired token
+      // Always try to consume the magic-link first
+      await consumeAuthFromUrl();
+
+      // Refresh session so an old tab doesn’t hold a stale token
       try { await supabase.auth.refreshSession(); } catch {}
 
       const { data: { session } } = await supabase.auth.getSession();
@@ -121,27 +140,24 @@
         return;
       }
 
-      await showWhoAmI();
+      const { data: { user } } = await supabase.auth.getUser();
+      v.who().textContent = user?.email ? `Signed in as: ${user.email}` : '';
 
-      // 2) Load babies
+      // Load babies and auto-heal active selection
       const babies = await fetchBabies();
-      if (babies.error) {
-        v.babyList().innerHTML = `<div class="err">Error loading babies: ${babies.error}</div>`;
-        return;
-      }
-
-      // 3) Auto-heal active baby: if missing/invalid, pick most recent
       let activeId = localStorage.getItem(ACTIVE_KEY);
-      const hasActive = activeId && babies.rows.some(b => b.id === activeId);
-      if (!hasActive) {
-        activeId = babies.rows[0]?.id || null;
-        if (activeId) localStorage.setItem(ACTIVE_KEY, activeId);
+      if (!babies.length) {
+        v.babyList().innerHTML = '<div class="muted">No babies yet. Create one above.</div>';
+      } else {
+        if (!activeId || !babies.some(b => b.id === activeId)) {
+          activeId = babies[0].id;
+          localStorage.setItem(ACTIVE_KEY, activeId);
+        }
+        renderBabies(babies, activeId);
       }
 
-      await renderBabies(babies.rows, activeId);
       await refreshActiveHeader();
       await loadTodayFeeds();
-
       switchTab(location.hash === '#settings' ? 'settings' : 'activity');
     }
 
@@ -154,74 +170,58 @@
 
     supabase.auth.onAuthStateChange(async (_evt, session) => {
       setAuthView(!!session);
-      if (!session) { v.who().textContent = ''; return; }
-      await init(); // re-run init to auto-heal if user signs in
+      if (session) { await init(); } else { v.who().textContent=''; }
     });
 
-    async function showWhoAmI(){
-      const { data: { user } } = await supabase.auth.getUser();
-      v.who().textContent = user?.email ? `Signed in as: ${user.email}` : '';
-    }
-
-    /* ---------- Tabs ---------- */
-    function switchTab(name) {
-      v.tabBtns().forEach(btn => btn.classList.remove('active'));
+    /* ─────────── Tabs ─────────── */
+    function switchTab(name){
+      v.tabBtns().forEach(b=>b.classList.remove('active'));
       const btn = document.querySelector(`[data-tab="${name}"]`);
       if (btn) btn.classList.add('active');
       v.activity().classList.add('hidden');
       v.settings().classList.add('hidden');
-      if (name === 'activity') { v.activity().classList.remove('hidden'); location.hash = '#activity'; }
-      else { v.settings().classList.remove('hidden'); location.hash = '#settings'; }
+      if (name==='activity'){ v.activity().classList.remove('hidden'); location.hash='#activity'; }
+      else { v.settings().classList.remove('hidden'); location.hash='#settings'; }
     }
 
-    /* ---------- Sign-in ---------- */
-    function emailInput(){ return el('email'); }
-    async function sendLink(e) {
+    /* ─────────── Sign in/out ─────────── */
+    async function sendLink(e){
       e.preventDefault();
       v.status().textContent = 'Sending magic link…';
-      const email = emailInput().value.trim();
-      if (!email) { v.status().textContent = 'Enter an email.'; return; }
+      const email = document.getElementById('email').value.trim();
+      if (!email) { v.status().textContent='Enter an email.'; return; }
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: window.location.origin }
       });
-      if (error) v.status().textContent = `Error: ${error.message}`;
-      else { v.status().textContent = ''; v.out().classList.add('hidden'); v.sent().classList.remove('hidden'); }
+      if (error) v.status().textContent = 'Error: ' + error.message;
+      else { v.status().textContent=''; v.out().classList.add('hidden'); v.sent().classList.remove('hidden'); }
     }
-    async function logout() {
-      await supabase.auth.signOut();
-      switchTab('activity');
+    async function logout(){ await supabase.auth.signOut(); switchTab('activity'); }
+
+    /* ─────────── Babies (settings) ─────────── */
+    function setDefaultTimezone(){
+      try { document.getElementById('baby-tz').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'; }
+      catch { document.getElementById('baby-tz').value = 'America/New_York'; }
     }
 
-    /* ---------- Babies (Settings) ---------- */
-    function setDefaultTimezone() {
-      try { el('baby-tz').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'; }
-      catch { el('baby-tz').value = 'America/New_York'; }
-    }
-
-    async function fetchBabies() {
-      v.babyList().innerHTML = '<div class="muted">Loading…</div>';
+    async function fetchBabies(){
       const { data, error } = await supabase
         .from('babies')
         .select('id,name,dob,timezone,created_at')
         .order('created_at',{ascending:false});
-      if (error) return { rows: [], error: error.message };
-      return { rows: data || [], error: null };
+      if (error) return [];
+      return data || [];
     }
 
-    async function renderBabies(rows, activeId) {
-      if (!rows.length) {
-        v.babyList().innerHTML = '<div class="muted">No babies yet for this signed-in email.</div><div class="note">Tip: If you created a baby under a different email, sign out and sign back in with that address.</div>';
-        return;
-      }
+    function renderBabies(rows, activeId){
       v.babyList().innerHTML = rows.map(b=>{
         const isActive = b.id===activeId;
-        const ageMonths = Math.max(0, Math.floor((Date.now()-new Date(b.dob+'T00:00:00').getTime())/(1000*60*60*24*30.437)));
         return `
           <div class="item" data-baby="${b.id}">
             <div>
-              <div><strong>${b.name}</strong> <span class="muted">(${ageMonths} mo)</span></div>
-              <div class="muted">DOB: ${b.dob} • TZ: ${b.timezone}</div>
+              <div><strong>${b.name}</strong> <span class="muted">DOB: ${b.dob}</span></div>
+              <div class="muted">TZ: ${b.timezone}</div>
             </div>
             <div class="row">
               ${isActive ? '<span class="pill active-badge">Active</span>' : '<span class="active-badge hidden pill">Active</span>'}
@@ -232,46 +232,43 @@
       }).join('');
     }
 
-    async function createBaby(e) {
+    async function createBaby(e){
       e.preventDefault();
-      const btn = el('create-baby-btn');
-      btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Saving…';
-      el('create-msg').textContent = ''; el('create-msg').className = 'muted';
-
-      try {
-        const name = el('baby-name').value.trim();
-        const dob  = el('baby-dob').value;
-        const tz   = el('baby-tz').value.trim() || 'America/New_York';
-        if (!name || !dob) { el('create-msg').textContent = 'Enter name and DOB.'; el('create-msg').className='err'; return; }
+      const btn = document.getElementById('create-baby-btn');
+      btn.disabled = true; const prev=btn.textContent; btn.textContent='Saving…';
+      const msg = document.getElementById('create-msg'); msg.textContent=''; msg.className='muted';
+      try{
+        const name = document.getElementById('baby-name').value.trim();
+        const dob  = document.getElementById('baby-dob').value;
+        const tz   = document.getElementById('baby-tz').value.trim() || 'America/New_York';
+        if (!name || !dob) { msg.textContent='Enter name and DOB.'; msg.className='err'; return; }
 
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not signed in');
 
-        const { error } = await supabase
-          .from('babies')
-          .insert([{ owner_id: user.id, name, dob, timezone: tz, day_start_hour: 0 }], { returning:'minimal' });
+        const { error } = await supabase.from('babies').insert([{ owner_id:user.id, name, dob, timezone:tz, day_start_hour:0 }], { returning:'minimal' });
         if (error) throw error;
 
-        el('create-msg').textContent = 'Saved!'; el('create-msg').className='ok';
-        el('baby-name').value=''; el('baby-dob').value='';
-        const babies = await fetchBabies();
-        await renderBabies(babies.rows, babies.rows[0]?.id);
-        if (babies.rows[0]?.id) setActive(babies.rows[0].id);
-      } catch (err) {
-        el('create-msg').textContent = 'Error: ' + (err?.message || String(err));
-        el('create-msg').className='err';
-      } finally { btn.disabled=false; btn.textContent=prev; }
+        msg.textContent='Saved!'; msg.className='ok';
+        document.getElementById('baby-name').value=''; document.getElementById('baby-dob').value='';
+        const rows = await fetchBabies();
+        const activeId = rows[0]?.id;
+        if (activeId) localStorage.setItem(ACTIVE_KEY, activeId);
+        renderBabies(rows, activeId);
+        await refreshActiveHeader();
+      }catch(err){ msg.textContent='Error: '+(err?.message||String(err)); msg.className='err'; }
+      finally { btn.disabled=false; btn.textContent=prev; }
     }
 
-    async function refreshActiveHeader() {
+    async function refreshActiveHeader(){
       const id = localStorage.getItem(ACTIVE_KEY);
-      if (!id){ v.activeName().textContent = 'No active baby — set one in Settings.'; return; }
+      if (!id){ v.activeName().textContent='No active baby — set one in Settings.'; return; }
       const { data, error } = await supabase.from('babies').select('name').eq('id', id).single();
       if (error || !data){ v.activeName().textContent='Active baby not found'; return; }
       v.activeName().textContent = data.name;
     }
 
-    function setActive(id) {
+    function setActive(id){
       localStorage.setItem(ACTIVE_KEY, id);
       document.querySelectorAll('.active-badge').forEach(el=>el.classList.add('hidden'));
       const badge = document.querySelector(`[data-baby="${id}"] .active-badge`);
@@ -281,95 +278,63 @@
       switchTab('activity');
     }
 
-    /* ---------- Activity: Feed modal ---------- */
-    function fmtLocalForInput(dt){
-      const pad=n=>String(n).padStart(2,'0');
-      return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-    }
-    function toMl(amount, units){
-      if (!amount) return null;
-      const n = Number(amount);
-      if (Number.isNaN(n)) return null;
-      return units==='ml' ? Math.round(n) : Math.round(n*29.5735);
-    }
+    /* ─────────── Feeds (activity) ─────────── */
+    function fmtLocalForInput(dt){ const pad=n=>String(n).padStart(2,'0'); return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`; }
+    function toMl(val, units){ if (!val) return null; const n=Number(val); if (Number.isNaN(n)) return null; return units==='ml'?Math.round(n):Math.round(n*29.5735); }
+    function fmtAmount(ml){ if (ml==null) return ''; const oz=Math.round((ml/29.5735)*10)/10; return `${oz} oz (${ml} ml)`; }
+    function fmtTime(d){ return new Date(d).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); }
 
     function openFeedModal(mode='create', record=null){
-      const id = localStorage.getItem(ACTIVE_KEY);
-      if (!id){ alert('Set an active baby in Settings first.'); return; }
-
-      v.feedId().value = record?.id || '';
-      el('modal-title').textContent = mode==='edit' ? 'Edit Feed' : 'Log Feed';
-      v.feedMsg().textContent = ''; v.feedMsg().className='muted';
+      const activeId = localStorage.getItem(ACTIVE_KEY);
+      if (!activeId){ alert('Set an active baby in Settings first.'); return; }
+      v.fId().value = record?.id || '';
+      v.mTitle().textContent = mode==='edit' ? 'Edit Feed' : 'Log Feed';
+      v.fMsg().textContent=''; v.fMsg().className='muted';
 
       if (record){
-        v.feedWhen().value = fmtLocalForInput(new Date(record.fed_at));
-        v.feedType().value = record.feed_type || 'Breast';
-        v.feedAmount().value = record.amount_ml ? Math.round((record.amount_ml/29.5735)*10)/10 : '';
-        v.feedUnits().value = 'oz';
-        v.feedSide().value = record.side || '';
-        v.feedDurL().value = record.duration_left_min ?? '';
-        v.feedDurR().value = record.duration_right_min ?? '';
-        v.feedNotes().value = record.notes ?? '';
+        v.fWhen().value = fmtLocalForInput(new Date(record.fed_at));
+        v.fType().value = record.feed_type || 'Breast';
+        v.fAmt().value = record.amount_ml ? Math.round((record.amount_ml/29.5735)*10)/10 : '';
+        v.fUnits().value='oz';
+        v.fSide().value = record.side || '';
+        v.fDurL().value = record.duration_left_min ?? '';
+        v.fDurR().value = record.duration_right_min ?? '';
+        v.fNotes().value = record.notes ?? '';
       } else {
-        v.feedWhen().value = fmtLocalForInput(new Date());
-        v.feedType().value = 'Breast';
-        v.feedAmount().value = '';
-        v.feedUnits().value = 'oz';
-        v.feedSide().value = '';
-        v.feedDurL().value = '';
-        v.feedDurR().value = '';
-        v.feedNotes().value = '';
+        v.fWhen().value = fmtLocalForInput(new Date());
+        v.fType().value='Breast'; v.fAmt().value=''; v.fUnits().value='oz';
+        v.fSide().value=''; v.fDurL().value=''; v.fDurR().value=''; v.fNotes().value='';
       }
       updateFeedTypeVisibility();
-      v.modalBackdrop().style.display = 'flex';
+      v.mBack().style.display='flex';
     }
-    function closeFeedModal(){ v.modalBackdrop().style.display = 'none'; }
-    function updateFeedTypeVisibility(){
-      const t = v.feedType().value;
-      v.feedBreastRow().classList.toggle('hidden', t!=='Breast');
-    }
+    function closeFeedModal(){ v.mBack().style.display='none'; }
+    function updateFeedTypeVisibility(){ v.fBreastRow().classList.toggle('hidden', v.fType().value!=='Breast'); }
 
     async function saveFeed(e){
       e.preventDefault();
       const activeId = localStorage.getItem(ACTIVE_KEY);
-      if (!activeId){ v.feedMsg().textContent='Set an active baby first.'; v.feedMsg().className='err'; return; }
-
-      const btn = v.feedSave(); const prev=btn.textContent; btn.disabled=true; btn.textContent='Saving…';
-      v.feedMsg().textContent=''; v.feedMsg().className='muted';
-
+      if (!activeId){ v.fMsg().textContent='Set an active baby first.'; v.fMsg().className='err'; return; }
+      const btn=v.fSave(); const prev=btn.textContent; btn.disabled=true; btn.textContent='Saving…'; v.fMsg().textContent=''; v.fMsg().className='muted';
       try{
-        const when = new Date(v.feedWhen().value);
-        if (isNaN(when.getTime())) throw new Error('Invalid date/time');
-
-        const type = v.feedType().value;
-        const amount = toMl(v.feedAmount().value, v.feedUnits().value);
-        const side = type==='Breast' ? (v.feedSide().value || null) : null;
-        const durL = type==='Breast' ? (v.feedDurL().value ? Number(v.feedDurL().value) : null) : null;
-        const durR = type==='Breast' ? (v.feedDurR().value ? Number(v.feedDurR().value) : null) : null;
-        const notes = v.feedNotes().value.trim() || null;
+        const when=new Date(v.fWhen().value); if (isNaN(when.getTime())) throw new Error('Invalid date/time');
+        const type=v.fType().value; const amount=toMl(v.fAmt().value, v.fUnits().value);
+        const side=type==='Breast'?(v.fSide().value||null):null;
+        const durL=type==='Breast'?(v.fDurL().value?Number(v.fDurL().value):null):null;
+        const durR=type==='Breast'?(v.fDurR().value?Number(v.fDurR().value):null):null;
+        const notes=v.fNotes().value.trim()||null;
 
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not signed in');
 
-        const payload = { baby_id:activeId, user_id:user.id, fed_at:when.toISOString(), amount_ml:amount, feed_type:type, side, duration_left_min:durL, duration_right_min:durR, notes };
-        const existingId = v.feedId().value;
+        const payload={ baby_id:activeId, user_id:user.id, fed_at:when.toISOString(), amount_ml:amount, feed_type:type, side, duration_left_min:durL, duration_right_min:durR, notes };
+        const id=v.fId().value;
+        if (id){ const { error } = await supabase.from('feeds').update(payload).eq('id', id); if (error) throw error; }
+        else { const { error } = await supabase.from('feeds').insert([payload], { returning:'minimal' }); if (error) throw error; }
 
-        if (existingId){
-          const { error } = await supabase.from('feeds').update(payload).eq('id', existingId);
-          if (error) throw error;
-        } else {
-          const { error } = await supabase.from('feeds').insert([payload], { returning:'minimal' });
-          if (error) throw error;
-        }
-
-        closeFeedModal();
-        await loadTodayFeeds();
-      }catch(err){
-        v.feedMsg().textContent = 'Error: ' + (err?.message || String(err));
-        v.feedMsg().className='err';
-      }finally{
-        btn.disabled=false; btn.textContent=prev;
-      }
+        closeFeedModal(); await loadTodayFeeds();
+      }catch(err){ v.fMsg().textContent='Error: '+(err?.message||String(err)); v.fMsg().className='err'; }
+      finally{ btn.disabled=false; btn.textContent=prev; }
     }
 
     async function deleteFeed(id){
@@ -379,38 +344,27 @@
       await loadTodayFeeds();
     }
 
-    /* ---------- Today list ---------- */
-    function todayRangeISO(){
-      const start = new Date(); start.setHours(0,0,0,0);
-      const end = new Date();
-      return [start.toISOString(), end.toISOString()];
-    }
-    function fmtAmount(ml){ if (ml==null) return ''; const oz = Math.round((ml/29.5735)*10)/10; return `${oz} oz (${ml} ml)`; }
-    function fmtTime(d){ return new Date(d).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); }
+    function todayRangeISO(){ const s=new Date(); s.setHours(0,0,0,0); const e=new Date(); return [s.toISOString(), e.toISOString()]; }
 
     async function loadTodayFeeds(){
       const id = localStorage.getItem(ACTIVE_KEY);
       if (!id){ v.feedList().innerHTML='<div class="muted">Set an active baby to see today’s feeds.</div>'; v.todayTotals().textContent=''; return; }
-      const [start,end] = todayRangeISO();
-      v.feedList().innerHTML = '<div class="muted">Loading…</div>';
-
+      const [start,end]=todayRangeISO();
+      v.feedList().innerHTML='<div class="muted">Loading…</div>';
       const { data, error } = await supabase
         .from('feeds')
         .select('id,fed_at,amount_ml,feed_type,side,notes,duration_left_min,duration_right_min')
         .eq('baby_id', id)
-        .gte('fed_at', start)
-        .lte('fed_at', end)
-        .order('fed_at', { ascending:false });
-
-      if (error){ v.feedList().innerHTML = '<div class="err">Error loading feeds.</div>'; v.todayTotals().textContent=''; return; }
-      if (!data || data.length===0){ v.feedList().innerHTML = '<div class="muted">No feeds yet today.</div>'; v.todayTotals().textContent=''; return; }
+        .gte('fed_at', start).lte('fed_at', end)
+        .order('fed_at',{ascending:false});
+      if (error){ v.feedList().innerHTML='<div class="err">Error loading feeds.</div>'; v.todayTotals().textContent=''; return; }
+      if (!data || data.length===0){ v.feedList().innerHTML='<div class="muted">No feeds yet today.</div>'; v.todayTotals().textContent=''; return; }
 
       v.feedList().innerHTML = data.map(r=>{
-        const extra = [];
+        const extra=[];
         if (r.feed_type==='Breast' && r.side) extra.push(`Side: ${r.side}`);
         if (r.duration_left_min!=null || r.duration_right_min!=null){
-          const parts=[];
-          if (r.duration_left_min!=null) parts.push(`L ${r.duration_left_min}m`);
+          const parts=[]; if (r.duration_left_min!=null) parts.push(`L ${r.duration_left_min}m`);
           if (r.duration_right_min!=null) parts.push(`R ${r.duration_right_min}m`);
           extra.push(parts.join(' / '));
         }
@@ -430,22 +384,20 @@
         `;
       }).join('');
 
-      const totalMl = data.reduce((sum,r)=> sum + (r.amount_ml||0), 0);
+      const totalMl = data.reduce((sum,r)=>sum+(r.amount_ml||0),0);
       const totalOz = Math.round((totalMl/29.5735)*10)/10;
       v.todayTotals().textContent = `Today: ${totalOz} oz (${totalMl} ml) across ${data.length} feed${data.length===1?'':'s'}.`;
-
-      window.__todayFeeds = data.reduce((m,r)=> (m[r.id]=r,m), {});
+      window.__todayFeeds = Object.fromEntries(data.map(r=>[r.id,r]));
     }
 
-    /* ---------- Expose a few handlers ---------- */
+    /* expose handlers */
     window.easybaby = {
       sendLink, logout, switchTab,
       createBaby, setActive,
       openFeedModal, closeFeedModal, updateFeedTypeVisibility, saveFeed, deleteFeed,
-      editFeed: (id)=> openFeedModal('edit', window.__todayFeeds?.[id] || null)
+      editFeed: id => openFeedModal('edit', window.__todayFeeds?.[id] || null)
     };
 
-    // Kickoff
     setDefaultTimezone();
     init();
   </script>
@@ -456,7 +408,6 @@
       <h1>EasyBaby</h1>
       <p class="muted">Log daily activities on the <strong>Activity</strong> tab. Manage profiles on <strong>Settings</strong>.</p>
 
-      <!-- Tabs (only visible when signed in) -->
       <div class="tabs hidden" id="tabs">
         <button class="tab-btn" data-tab="activity" onclick="easybaby.switchTab('activity')">Activity</button>
         <button class="tab-btn" data-tab="settings" onclick="easybaby.switchTab('settings')">Settings</button>
@@ -481,13 +432,12 @@
         <div id="whoami" class="note"></div>
 
         <!-- ACTIVITY TAB -->
-        <section id="tab-activity" class="">
+        <section id="tab-activity">
           <div class="between">
             <h2>Active Baby: <span id="active-baby-name" class="muted">No active baby — set one in Settings.</span></h2>
-            <button id="open-add-modal" onclick="easybaby.openFeedModal('create')">+ Log Activity</button>
+            <button onclick="easybaby.openFeedModal('create')">+ Log Activity</button>
           </div>
 
-          <!-- Today’s Feeds -->
           <div class="mt-4">
             <div class="between">
               <h2>Today’s Feeds</h2>
@@ -601,7 +551,7 @@
         </form>
       </main>
       <footer>
-        <button class="btn-ghost" id="feed-cancel" onclick="easybaby.closeFeedModal()">Cancel</button>
+        <button class="btn-ghost" onclick="easybaby.closeFeedModal()">Cancel</button>
         <button id="feed-save" onclick="document.getElementById('feed-form').requestSubmit()">Save</button>
       </footer>
     </div>
