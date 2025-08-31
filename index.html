@@ -192,7 +192,7 @@
       if (!email) { v.status().textContent='Enter an email.'; return; }
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: window.location.origin }
+        options: { emailRedirectTo: 'https://easybaby-kappa.vercel.app/' }
       });
       if (error) v.status().textContent = 'Error: ' + error.message;
       else { v.status().textContent=''; v.out().classList.add('hidden'); v.sent().classList.remove('hidden'); }
