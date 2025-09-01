@@ -96,17 +96,17 @@
       // 1) OAuth/PKCE style: ?code=...
       const code = url.searchParams.get('code');
       if (code) {
-        try { await supabase.auth.exchangeCodeForSession(code); } catch {}
+        try { await supabase.auth.exchangeCodeForSession(code); } catch (e) { console.warn('exchangeCodeForSession', e); }
         url.searchParams.delete('code');
         url.searchParams.delete('state');
       }
 
       // 2) OTP magic link style: ?token_hash=...&type=...&email=...
       const token_hash = url.searchParams.get('token_hash');
-      const type = url.searchParams.get('type');  // "signup" or "magiclink"
+      const type = url.searchParams.get('type');  // "signup" or "magiclink" (etc.)
       const email = url.searchParams.get('email');
       if (token_hash && type) {
-        try { await supabase.auth.verifyOtp({ type, token_hash, email }); } catch {}
+        try { await supabase.auth.verifyOtp({ type, token_hash, email }); } catch (e) { console.warn('verifyOtp', e); }
         ['token_hash','type','email'].forEach(p=>url.searchParams.delete(p));
       }
 
@@ -116,7 +116,7 @@
         const access_token = hash.get('access_token');
         const refresh_token = hash.get('refresh_token');
         if (access_token && refresh_token) {
-          try { await supabase.auth.setSession({ access_token, refresh_token }); } catch {}
+          try { await supabase.auth.setSession({ access_token, refresh_token }); } catch (e) { console.warn('setSession', e); }
         }
         history.replaceState({}, '', url.pathname + url.search); // clear hash
       } else {
@@ -130,7 +130,7 @@
       await consumeAuthFromUrl();
 
       // Refresh session so an old tab doesn’t hold a stale token
-      try { await supabase.auth.refreshSession(); } catch {}
+      try { await supabase.auth.refreshSession(); } catch (e) { console.warn('refreshSession', e); }
 
       const { data: { session } } = await supabase.auth.getSession();
       setAuthView(!!session);
@@ -192,7 +192,7 @@
       if (!email) { v.status().textContent='Enter an email.'; return; }
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: 'https://easybaby-kappa.vercel.app/' }
+        options: { emailRedirectTo: 'https://easybaby-kappa.vercel.app/' } // explicit live URL
       });
       if (error) v.status().textContent = 'Error: ' + error.message;
       else { v.status().textContent=''; v.out().classList.add('hidden'); v.sent().classList.remove('hidden'); }
@@ -205,12 +205,13 @@
       catch { document.getElementById('baby-tz').value = 'America/New_York'; }
     }
 
+    // FIXED: no created_at (prevents empty results on error)
     async function fetchBabies(){
       const { data, error } = await supabase
         .from('babies')
-        .select('id,name,dob,timezone,created_at')
-        .order('created_at',{ascending:false});
-      if (error) return [];
+        .select('id,name,dob,timezone')
+        .order('dob',{ascending:false});
+      if (error) { console.error('babies select error', error); return []; }
       return data || [];
     }
 
@@ -246,7 +247,10 @@
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Not signed in');
 
-        const { error } = await supabase.from('babies').insert([{ owner_id:user.id, name, dob, timezone:tz, day_start_hour:0 }], { returning:'minimal' });
+        // FIXED: remove day_start_hour (column may not exist)
+        const { error } = await supabase
+          .from('babies')
+          .insert([{ owner_id:user.id, name, dob, timezone:tz }], { returning:'minimal' });
         if (error) throw error;
 
         msg.textContent='Saved!'; msg.className='ok';
