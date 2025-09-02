@@ -332,13 +332,16 @@
         debugLog('Getting user authentication...');
         let user;
         try {
-          const { data, error: authError } = await supabase.auth.getUser();
-          if (authError) {
-            debugLog('Auth error details', authError);
-            throw authError;
+          // Try getting session first, then user
+          const { data: { session } } = await supabase.auth.getSession();
+          debugLog('Session check', { hasSession: !!session, userId: session?.user?.id });
+          
+          if (!session) {
+            throw new Error('No active session found');
           }
-          user = data?.user;
-          debugLog('Auth response', { hasUser: !!user, userId: user?.id });
+          
+          user = session.user;
+          debugLog('User from session', { hasUser: !!user, userId: user?.id, email: user?.email });
         } catch (authErr) {
           debugLog('Auth exception', authErr);
           throw new Error('Authentication failed: ' + authErr.message);
