@@ -329,14 +329,28 @@
           return; 
         }
 
-        const { data: { user } } = await supabase.auth.getUser();
+        debugLog('Getting user authentication...');
+        let user;
+        try {
+          const { data, error: authError } = await supabase.auth.getUser();
+          if (authError) {
+            debugLog('Auth error details', authError);
+            throw authError;
+          }
+          user = data?.user;
+          debugLog('Auth response', { hasUser: !!user, userId: user?.id });
+        } catch (authErr) {
+          debugLog('Auth exception', authErr);
+          throw new Error('Authentication failed: ' + authErr.message);
+        }
+        
         if (!user) {
           const error = 'Not signed in';
-          debugLog('Auth error', error);
+          debugLog('No user found');
           throw new Error(error);
         }
         
-        debugLog('User authenticated', { userId: user.id });
+        debugLog('User authenticated successfully', { userId: user.id, email: user.email });
 
         const payload = { 
           owner_id: user.id, 
@@ -347,23 +361,31 @@
         
         debugLog('Inserting baby with payload', payload);
 
-        const { data, error } = await supabase
-          .from('babies')
-          .insert([payload])
-          .select();
-        
-        if (error) {
-          debugLog('Insert error', error);
-          throw error;
+        let insertResult;
+        try {
+          insertResult = await supabase
+            .from('babies')
+            .insert([payload])
+            .select();
+          debugLog('Insert raw result', insertResult);
+        } catch (insertErr) {
+          debugLog('Insert exception', insertErr);
+          throw new Error('Database insert failed: ' + insertErr.message);
         }
         
-        debugLog('Baby created successfully', data);
+        if (insertResult.error) {
+          debugLog('Insert error from result', insertResult.error);
+          throw new Error('Database error: ' + insertResult.error.message);
+        }
+        
+        debugLog('Baby created successfully', insertResult.data);
 
         msg.textContent = 'Saved!'; 
         msg.className = 'ok';
         document.getElementById('baby-name').value = ''; 
         document.getElementById('baby-dob').value = '';
         
+        debugLog('Fetching updated baby list...');
         const rows = await fetchBabies();
         const activeId = rows[0]?.id;
         if (activeId) {
@@ -375,7 +397,7 @@
         
       } catch(err) { 
         const errorMsg = 'Error: ' + (err?.message || String(err));
-        debugLog('Create baby error', err);
+        debugLog('Create baby final error', { message: err?.message, stack: err?.stack, fullError: err });
         msg.textContent = errorMsg; 
         msg.className = 'err'; 
       } finally { 
