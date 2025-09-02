@@ -332,18 +332,40 @@
         debugLog('Getting user authentication...');
         let user;
         try {
-          // Try getting session first, then user
-          const { data: { session } } = await supabase.auth.getSession();
-          debugLog('Session check', { hasSession: !!session, userId: session?.user?.id });
+          // Add a timeout to prevent hanging
+          const authPromise = supabase.auth.getSession();
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Auth timeout after 10 seconds')), 10000)
+          );
           
-          if (!session) {
-            throw new Error('No active session found');
+          const sessionResult = await Promise.race([authPromise, timeoutPromise]);
+          debugLog('Session result received', { hasData: !!sessionResult?.data });
+          
+          const { data: { session }, error: sessionError } = sessionResult;
+          debugLog('Session details', { 
+            hasSession: !!session, 
+            hasUser: !!session?.user, 
+            userId: session?.user?.id,
+            error: sessionError?.message 
+          });
+          
+          if (sessionError) {
+            throw new Error('Session error: ' + sessionError.message);
+          }
+          
+          if (!session || !session.user) {
+            throw new Error('No active session or user found');
           }
           
           user = session.user;
-          debugLog('User from session', { hasUser: !!user, userId: user?.id, email: user?.email });
+          debugLog('User extracted successfully', { userId: user.id, email: user.email });
+          
         } catch (authErr) {
-          debugLog('Auth exception', authErr);
+          debugLog('Auth exception caught', { 
+            message: authErr?.message, 
+            name: authErr?.name,
+            stack: authErr?.stack?.substring(0, 200) 
+          });
           throw new Error('Authentication failed: ' + authErr.message);
         }
         
