@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>EasyBaby - Debug</title>
+  <title>EasyBaby - Debug Version</title>
   <meta name="color-scheme" content="light dark" />
   <style>
     :root { --bg:#f9fafb; --card:#ffffff; --text:#111827; --muted:#6b7280; --line:#e5e7eb; --brand:#b45309; }
@@ -47,13 +47,21 @@
   </style>
 
   <script type="module">
-    // Try unpkg CDN instead of jsdelivr
-    import { createClient } from 'https://unpkg.com/@supabase/supabase-js@2/dist/module/index.js';
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
     /* ─────────── Supabase client ─────────── */
     const SUPABASE_URL = 'https://mfgdasfnidxxzcymfvfx.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mZ2Rhc2ZuaWR4eHpjeW1mdmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0NzYxNTksImV4cCI6MjA3MjA1MjE1OX0.hMk0myq85kUDUB-RXvb-Y5Xg36lLFWryVOi34x3ahYU';
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    
+    // Make supabase globally available
+    let supabase;
+    try {
+      supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      window.supabase = supabase; // Add to global scope for console testing
+      debugLog('Supabase client created successfully');
+    } catch (e) {
+      debugLog('Supabase client creation failed', e);
+    }
 
     const ACTIVE_KEY = 'easybaby.activeBabyId';
 
