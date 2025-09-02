@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>EasyBaby</title>
+  <title>EasyBaby - Debug</title>
   <meta name="color-scheme" content="light dark" />
   <style>
     :root { --bg:#f9fafb; --card:#ffffff; --text:#111827; --muted:#6b7280; --line:#e5e7eb; --brand:#b45309; }
@@ -32,6 +32,7 @@
     .badge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid var(--line); background:#fff; }
     .ok { color:#065f46; } .err { color:#b91c1c; }
     .note { font-size:12px; background:#fff; border:1px dashed #e5e7eb; padding:8px 10px; border-radius:8px; margin-top:8px; }
+    .debug { background:#fef3c7; border:1px solid #f59e0b; padding:8px 10px; border-radius:8px; margin:8px 0; font-size:12px; }
 
     .tabs { display:flex; gap:8px; margin: 10px 0 16px; }
     .tab-btn { background:#fff; color:#374151; border:1px solid var(--line); padding:8px 12px; border-radius:999px; cursor:pointer; }
@@ -48,12 +49,28 @@
   <script type="module">
     import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
-    /* ─────────── Supabase client (your project) ─────────── */
+    /* ─────────── Supabase client ─────────── */
     const SUPABASE_URL = 'https://mfgdasfnidxxzcymfvfx.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mZ2Rhc2ZuaWR4eHpjeW1mdmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0NzYxNTksImV4cCI6MjA3MjA1MjE1OX0.hMk0myq85kUDUB-RXvb-Y5Xg36lLFWryVOi34x3ahYU';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const ACTIVE_KEY = 'easybaby.activeBabyId';
+
+    /* ─────────── Debug helpers ─────────── */
+    function debugLog(message, data = null) {
+      console.log(`[DEBUG] ${message}`, data);
+      const debugEl = document.getElementById('debug-log');
+      if (debugEl) {
+        const entry = document.createElement('div');
+        entry.className = 'debug';
+        entry.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${message}`;
+        if (data) {
+          entry.innerHTML += `<br><pre style="margin:4px 0 0; font-size:11px;">${JSON.stringify(data, null, 2)}</pre>`;
+        }
+        debugEl.appendChild(entry);
+        debugEl.scrollTop = debugEl.scrollHeight;
+      }
+    }
 
     /* ─────────── Helpers ─────────── */
     const el = (id)=>document.getElementById(id);
@@ -70,55 +87,55 @@
       babyList:()=>el('baby-list'),
       feedList:()=>el('feed-list'),
       todayTotals:()=>el('today-totals'),
-      // modal
-      mBack:()=>el('modal-backdrop'),
-      mTitle:()=>el('modal-title'),
-      fForm:()=>el('feed-form'),
-      fWhen:()=>el('feed-when'),
-      fType:()=>el('feed-type'),
-      fAmt:()=>el('feed-amount'),
-      fUnits:()=>el('feed-units'),
-      fSide:()=>el('feed-side'),
-      fDurL:()=>el('feed-dur-left'),
-      fDurR:()=>el('feed-dur-right'),
-      fNotes:()=>el('feed-notes'),
-      fBreastRow:()=>el('breast-row'),
-      fSave:()=>el('feed-save'),
-      fMsg:()=>el('feed-msg'),
-      fId:()=>el('feed-id'),
       status:()=>el('status')
     };
 
-    /* ─────────── Auth deep-link handling (fixes loop) ─────────── */
+    /* ─────────── Auth deep-link handling ─────────── */
     async function consumeAuthFromUrl() {
       const url = new URL(window.location.href);
+      debugLog('Consuming auth from URL', { href: url.href });
 
-      // 1) OAuth/PKCE style: ?code=...
       const code = url.searchParams.get('code');
       if (code) {
-        try { await supabase.auth.exchangeCodeForSession(code); } catch (e) { console.warn('exchangeCodeForSession', e); }
+        debugLog('Found OAuth code, exchanging for session');
+        try { 
+          await supabase.auth.exchangeCodeForSession(code); 
+          debugLog('Successfully exchanged code for session');
+        } catch (e) { 
+          debugLog('Error exchanging code for session', e); 
+        }
         url.searchParams.delete('code');
         url.searchParams.delete('state');
       }
 
-      // 2) OTP magic link style: ?token_hash=...&type=...&email=...
       const token_hash = url.searchParams.get('token_hash');
-      const type = url.searchParams.get('type');  // "signup" or "magiclink" (etc.)
+      const type = url.searchParams.get('type');
       const email = url.searchParams.get('email');
       if (token_hash && type) {
-        try { await supabase.auth.verifyOtp({ type, token_hash, email }); } catch (e) { console.warn('verifyOtp', e); }
+        debugLog('Found OTP token, verifying');
+        try { 
+          await supabase.auth.verifyOtp({ type, token_hash, email }); 
+          debugLog('Successfully verified OTP');
+        } catch (e) { 
+          debugLog('Error verifying OTP', e); 
+        }
         ['token_hash','type','email'].forEach(p=>url.searchParams.delete(p));
       }
 
-      // 3) Hash tokens (access_token/refresh_token in #...)
       if (location.hash.includes('access_token')) {
+        debugLog('Found hash tokens, setting session');
         const hash = new URLSearchParams(location.hash.slice(1));
         const access_token = hash.get('access_token');
         const refresh_token = hash.get('refresh_token');
         if (access_token && refresh_token) {
-          try { await supabase.auth.setSession({ access_token, refresh_token }); } catch (e) { console.warn('setSession', e); }
+          try { 
+            await supabase.auth.setSession({ access_token, refresh_token }); 
+            debugLog('Successfully set session from hash');
+          } catch (e) { 
+            debugLog('Error setting session from hash', e); 
+          }
         }
-        history.replaceState({}, '', url.pathname + url.search); // clear hash
+        history.replaceState({}, '', url.pathname + url.search);
       } else {
         history.replaceState({}, '', url.pathname + url.search);
       }
@@ -126,13 +143,19 @@
 
     /* ─────────── App init ─────────── */
     async function init() {
-      // Always try to consume the magic-link first
+      debugLog('Initializing app');
       await consumeAuthFromUrl();
 
-      // Refresh session so an old tab doesn’t hold a stale token
-      try { await supabase.auth.refreshSession(); } catch (e) { console.warn('refreshSession', e); }
+      debugLog('Refreshing session');
+      try { 
+        await supabase.auth.refreshSession(); 
+        debugLog('Session refreshed successfully');
+      } catch (e) { 
+        debugLog('Error refreshing session', e); 
+      }
 
       const { data: { session } } = await supabase.auth.getSession();
+      debugLog('Current session', session ? 'exists' : 'none');
       setAuthView(!!session);
 
       if (!session) {
@@ -141,23 +164,38 @@
       }
 
       const { data: { user } } = await supabase.auth.getUser();
+      debugLog('Current user', { id: user?.id, email: user?.email });
       v.who().textContent = user?.email ? `Signed in as: ${user.email}` : '';
 
-      // Load babies and auto-heal active selection
+      // Test database connection
+      debugLog('Testing database connection');
+      try {
+        const { data, error } = await supabase.from('babies').select('count', { count: 'exact', head: true });
+        if (error) {
+          debugLog('Database connection error', error);
+        } else {
+          debugLog('Database connection successful', { count: data });
+        }
+      } catch (e) {
+        debugLog('Database connection failed', e);
+      }
+
       const babies = await fetchBabies();
       let activeId = localStorage.getItem(ACTIVE_KEY);
+      debugLog('Fetched babies', { count: babies.length, activeId });
+      
       if (!babies.length) {
         v.babyList().innerHTML = '<div class="muted">No babies yet. Create one above.</div>';
       } else {
         if (!activeId || !babies.some(b => b.id === activeId)) {
           activeId = babies[0].id;
           localStorage.setItem(ACTIVE_KEY, activeId);
+          debugLog('Auto-selected active baby', activeId);
         }
         renderBabies(babies, activeId);
       }
 
       await refreshActiveHeader();
-      await loadTodayFeeds();
       switchTab(location.hash === '#settings' ? 'settings' : 'activity');
     }
 
@@ -169,6 +207,7 @@
     }
 
     supabase.auth.onAuthStateChange(async (_evt, session) => {
+      debugLog('Auth state changed', { event: _evt, hasSession: !!session });
       setAuthView(!!session);
       if (session) { await init(); } else { v.who().textContent=''; }
     });
@@ -187,35 +226,64 @@
     /* ─────────── Sign in/out ─────────── */
     async function sendLink(e){
       e.preventDefault();
+      debugLog('Sending magic link');
       v.status().textContent = 'Sending magic link…';
       const email = document.getElementById('email').value.trim();
       if (!email) { v.status().textContent='Enter an email.'; return; }
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: 'https://easybaby-kappa.vercel.app/' } // explicit live URL
+        options: { emailRedirectTo: window.location.origin }
       });
-      if (error) v.status().textContent = 'Error: ' + error.message;
-      else { v.status().textContent=''; v.out().classList.add('hidden'); v.sent().classList.remove('hidden'); }
+      if (error) {
+        debugLog('Magic link error', error);
+        v.status().textContent = 'Error: ' + error.message;
+      } else { 
+        debugLog('Magic link sent successfully');
+        v.status().textContent=''; v.out().classList.add('hidden'); v.sent().classList.remove('hidden'); 
+      }
     }
-    async function logout(){ await supabase.auth.signOut(); switchTab('activity'); }
+    
+    async function logout(){ 
+      debugLog('Signing out');
+      await supabase.auth.signOut(); 
+      switchTab('activity'); 
+    }
 
     /* ─────────── Babies (settings) ─────────── */
     function setDefaultTimezone(){
-      try { document.getElementById('baby-tz').value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York'; }
-      catch { document.getElementById('baby-tz').value = 'America/New_York'; }
+      try { 
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York';
+        document.getElementById('baby-tz').value = tz;
+        debugLog('Set default timezone', tz);
+      } catch { 
+        document.getElementById('baby-tz').value = 'America/New_York'; 
+        debugLog('Set fallback timezone');
+      }
     }
 
-    // FIXED: no created_at (prevents empty results on error)
     async function fetchBabies(){
-      const { data, error } = await supabase
-        .from('babies')
-        .select('id,name,dob,timezone')
-        .order('dob',{ascending:false});
-      if (error) { console.error('babies select error', error); return []; }
-      return data || [];
+      debugLog('Fetching babies');
+      try {
+        const { data, error } = await supabase
+          .from('babies')
+          .select('id,name,dob,timezone')
+          .order('dob',{ascending:false});
+        
+        if (error) { 
+          debugLog('Error fetching babies', error);
+          return []; 
+        }
+        
+        debugLog('Successfully fetched babies', data);
+        return data || [];
+      } catch (e) {
+        debugLog('Exception fetching babies', e);
+        return [];
+      }
     }
 
     function renderBabies(rows, activeId){
+      debugLog('Rendering babies', { count: rows.length, activeId });
       v.babyList().innerHTML = rows.map(b=>{
         const isActive = b.id===activeId;
         return `
@@ -235,171 +303,120 @@
 
     async function createBaby(e){
       e.preventDefault();
+      debugLog('Creating baby - started');
+      
       const btn = document.getElementById('create-baby-btn');
-      btn.disabled = true; const prev=btn.textContent; btn.textContent='Saving…';
-      const msg = document.getElementById('create-msg'); msg.textContent=''; msg.className='muted';
-      try{
+      btn.disabled = true; 
+      const prev = btn.textContent; 
+      btn.textContent = 'Saving…';
+      
+      const msg = document.getElementById('create-msg'); 
+      msg.textContent = ''; 
+      msg.className = 'muted';
+      
+      try {
         const name = document.getElementById('baby-name').value.trim();
-        const dob  = document.getElementById('baby-dob').value;
-        const tz   = document.getElementById('baby-tz').value.trim() || 'America/New_York';
-        if (!name || !dob) { msg.textContent='Enter name and DOB.'; msg.className='err'; return; }
+        const dob = document.getElementById('baby-dob').value;
+        const tz = document.getElementById('baby-tz').value.trim() || 'America/New_York';
+        
+        debugLog('Baby form data', { name, dob, tz });
+        
+        if (!name || !dob) { 
+          const error = 'Enter name and DOB.';
+          debugLog('Validation error', error);
+          msg.textContent = error; 
+          msg.className = 'err'; 
+          return; 
+        }
 
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Not signed in');
+        if (!user) {
+          const error = 'Not signed in';
+          debugLog('Auth error', error);
+          throw new Error(error);
+        }
+        
+        debugLog('User authenticated', { userId: user.id });
 
-        // FIXED: remove day_start_hour (column may not exist)
-        const { error } = await supabase
+        const payload = { 
+          owner_id: user.id, 
+          name, 
+          dob, 
+          timezone: tz 
+        };
+        
+        debugLog('Inserting baby with payload', payload);
+
+        const { data, error } = await supabase
           .from('babies')
-          .insert([{ owner_id:user.id, name, dob, timezone:tz }], { returning:'minimal' });
-        if (error) throw error;
+          .insert([payload])
+          .select();
+        
+        if (error) {
+          debugLog('Insert error', error);
+          throw error;
+        }
+        
+        debugLog('Baby created successfully', data);
 
-        msg.textContent='Saved!'; msg.className='ok';
-        document.getElementById('baby-name').value=''; document.getElementById('baby-dob').value='';
+        msg.textContent = 'Saved!'; 
+        msg.className = 'ok';
+        document.getElementById('baby-name').value = ''; 
+        document.getElementById('baby-dob').value = '';
+        
         const rows = await fetchBabies();
         const activeId = rows[0]?.id;
-        if (activeId) localStorage.setItem(ACTIVE_KEY, activeId);
+        if (activeId) {
+          localStorage.setItem(ACTIVE_KEY, activeId);
+          debugLog('Set new active baby', activeId);
+        }
         renderBabies(rows, activeId);
         await refreshActiveHeader();
-      }catch(err){ msg.textContent='Error: '+(err?.message||String(err)); msg.className='err'; }
-      finally { btn.disabled=false; btn.textContent=prev; }
+        
+      } catch(err) { 
+        const errorMsg = 'Error: ' + (err?.message || String(err));
+        debugLog('Create baby error', err);
+        msg.textContent = errorMsg; 
+        msg.className = 'err'; 
+      } finally { 
+        btn.disabled = false; 
+        btn.textContent = prev; 
+      }
     }
 
     async function refreshActiveHeader(){
       const id = localStorage.getItem(ACTIVE_KEY);
-      if (!id){ v.activeName().textContent='No active baby — set one in Settings.'; return; }
+      debugLog('Refreshing active header', { activeId: id });
+      
+      if (!id){ 
+        v.activeName().textContent='No active baby — set one in Settings.'; 
+        return; 
+      }
+      
       const { data, error } = await supabase.from('babies').select('name').eq('id', id).single();
-      if (error || !data){ v.activeName().textContent='Active baby not found'; return; }
+      if (error || !data){ 
+        debugLog('Error getting active baby name', error);
+        v.activeName().textContent='Active baby not found'; 
+        return; 
+      }
+      
       v.activeName().textContent = data.name;
     }
 
     function setActive(id){
+      debugLog('Setting active baby', id);
       localStorage.setItem(ACTIVE_KEY, id);
       document.querySelectorAll('.active-badge').forEach(el=>el.classList.add('hidden'));
       const badge = document.querySelector(`[data-baby="${id}"] .active-badge`);
       if (badge) badge.classList.remove('hidden');
       refreshActiveHeader();
-      loadTodayFeeds();
       switchTab('activity');
-    }
-
-    /* ─────────── Feeds (activity) ─────────── */
-    function fmtLocalForInput(dt){ const pad=n=>String(n).padStart(2,'0'); return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`; }
-    function toMl(val, units){ if (!val) return null; const n=Number(val); if (Number.isNaN(n)) return null; return units==='ml'?Math.round(n):Math.round(n*29.5735); }
-    function fmtAmount(ml){ if (ml==null) return ''; const oz=Math.round((ml/29.5735)*10)/10; return `${oz} oz (${ml} ml)`; }
-    function fmtTime(d){ return new Date(d).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }); }
-
-    function openFeedModal(mode='create', record=null){
-      const activeId = localStorage.getItem(ACTIVE_KEY);
-      if (!activeId){ alert('Set an active baby in Settings first.'); return; }
-      v.fId().value = record?.id || '';
-      v.mTitle().textContent = mode==='edit' ? 'Edit Feed' : 'Log Feed';
-      v.fMsg().textContent=''; v.fMsg().className='muted';
-
-      if (record){
-        v.fWhen().value = fmtLocalForInput(new Date(record.fed_at));
-        v.fType().value = record.feed_type || 'Breast';
-        v.fAmt().value = record.amount_ml ? Math.round((record.amount_ml/29.5735)*10)/10 : '';
-        v.fUnits().value='oz';
-        v.fSide().value = record.side || '';
-        v.fDurL().value = record.duration_left_min ?? '';
-        v.fDurR().value = record.duration_right_min ?? '';
-        v.fNotes().value = record.notes ?? '';
-      } else {
-        v.fWhen().value = fmtLocalForInput(new Date());
-        v.fType().value='Breast'; v.fAmt().value=''; v.fUnits().value='oz';
-        v.fSide().value=''; v.fDurL().value=''; v.fDurR().value=''; v.fNotes().value='';
-      }
-      updateFeedTypeVisibility();
-      v.mBack().style.display='flex';
-    }
-    function closeFeedModal(){ v.mBack().style.display='none'; }
-    function updateFeedTypeVisibility(){ v.fBreastRow().classList.toggle('hidden', v.fType().value!=='Breast'); }
-
-    async function saveFeed(e){
-      e.preventDefault();
-      const activeId = localStorage.getItem(ACTIVE_KEY);
-      if (!activeId){ v.fMsg().textContent='Set an active baby first.'; v.fMsg().className='err'; return; }
-      const btn=v.fSave(); const prev=btn.textContent; btn.disabled=true; btn.textContent='Saving…'; v.fMsg().textContent=''; v.fMsg().className='muted';
-      try{
-        const when=new Date(v.fWhen().value); if (isNaN(when.getTime())) throw new Error('Invalid date/time');
-        const type=v.fType().value; const amount=toMl(v.fAmt().value, v.fUnits().value);
-        const side=type==='Breast'?(v.fSide().value||null):null;
-        const durL=type==='Breast'?(v.fDurL().value?Number(v.fDurL().value):null):null;
-        const durR=type==='Breast'?(v.fDurR().value?Number(v.fDurR().value):null):null;
-        const notes=v.fNotes().value.trim()||null;
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Not signed in');
-
-        const payload={ baby_id:activeId, user_id:user.id, fed_at:when.toISOString(), amount_ml:amount, feed_type:type, side, duration_left_min:durL, duration_right_min:durR, notes };
-        const id=v.fId().value;
-        if (id){ const { error } = await supabase.from('feeds').update(payload).eq('id', id); if (error) throw error; }
-        else { const { error } = await supabase.from('feeds').insert([payload], { returning:'minimal' }); if (error) throw error; }
-
-        closeFeedModal(); await loadTodayFeeds();
-      }catch(err){ v.fMsg().textContent='Error: '+(err?.message||String(err)); v.fMsg().className='err'; }
-      finally{ btn.disabled=false; btn.textContent=prev; }
-    }
-
-    async function deleteFeed(id){
-      if (!confirm('Delete this feed?')) return;
-      const { error } = await supabase.from('feeds').delete().eq('id', id);
-      if (error){ alert('Error deleting: '+error.message); return; }
-      await loadTodayFeeds();
-    }
-
-    function todayRangeISO(){ const s=new Date(); s.setHours(0,0,0,0); const e=new Date(); return [s.toISOString(), e.toISOString()]; }
-
-    async function loadTodayFeeds(){
-      const id = localStorage.getItem(ACTIVE_KEY);
-      if (!id){ v.feedList().innerHTML='<div class="muted">Set an active baby to see today’s feeds.</div>'; v.todayTotals().textContent=''; return; }
-      const [start,end]=todayRangeISO();
-      v.feedList().innerHTML='<div class="muted">Loading…</div>';
-      const { data, error } = await supabase
-        .from('feeds')
-        .select('id,fed_at,amount_ml,feed_type,side,notes,duration_left_min,duration_right_min')
-        .eq('baby_id', id)
-        .gte('fed_at', start).lte('fed_at', end)
-        .order('fed_at',{ascending:false});
-      if (error){ v.feedList().innerHTML='<div class="err">Error loading feeds.</div>'; v.todayTotals().textContent=''; return; }
-      if (!data || data.length===0){ v.feedList().innerHTML='<div class="muted">No feeds yet today.</div>'; v.todayTotals().textContent=''; return; }
-
-      v.feedList().innerHTML = data.map(r=>{
-        const extra=[];
-        if (r.feed_type==='Breast' && r.side) extra.push(`Side: ${r.side}`);
-        if (r.duration_left_min!=null || r.duration_right_min!=null){
-          const parts=[]; if (r.duration_left_min!=null) parts.push(`L ${r.duration_left_min}m`);
-          if (r.duration_right_min!=null) parts.push(`R ${r.duration_right_min}m`);
-          extra.push(parts.join(' / '));
-        }
-        return `
-          <div class="item">
-            <div class="between">
-              <div><strong>${r.feed_type}</strong> • ${fmtTime(r.fed_at)}</div>
-              <div class="row">
-                <button class="btn-ghost" onclick="easybaby.editFeed('${r.id}')">Edit</button>
-                <button class="btn-ghost" onclick="easybaby.deleteFeed('${r.id}')">Delete</button>
-                <div class="badge">${fmtAmount(r.amount_ml)}</div>
-              </div>
-            </div>
-            ${extra.length?`<div class="muted mt-1">${extra.join(' • ')}</div>`:''}
-            ${r.notes?`<div class="mt-1">${r.notes}</div>`:''}
-          </div>
-        `;
-      }).join('');
-
-      const totalMl = data.reduce((sum,r)=>sum+(r.amount_ml||0),0);
-      const totalOz = Math.round((totalMl/29.5735)*10)/10;
-      v.todayTotals().textContent = `Today: ${totalOz} oz (${totalMl} ml) across ${data.length} feed${data.length===1?'':'s'}.`;
-      window.__todayFeeds = Object.fromEntries(data.map(r=>[r.id,r]));
     }
 
     /* expose handlers */
     window.easybaby = {
       sendLink, logout, switchTab,
-      createBaby, setActive,
-      openFeedModal, closeFeedModal, updateFeedTypeVisibility, saveFeed, deleteFeed,
-      editFeed: id => openFeedModal('edit', window.__todayFeeds?.[id] || null)
+      createBaby, setActive
     };
 
     setDefaultTimezone();
@@ -409,8 +426,8 @@
 <body>
   <div class="wrap">
     <div class="card">
-      <h1>EasyBaby</h1>
-      <p class="muted">Log daily activities on the <strong>Activity</strong> tab. Manage profiles on <strong>Settings</strong>.</p>
+      <h1>EasyBaby - Debug Version</h1>
+      <p class="muted">This version includes detailed logging to help debug the issue.</p>
 
       <div class="tabs hidden" id="tabs">
         <button class="tab-btn" data-tab="activity" onclick="easybaby.switchTab('activity')">Activity</button>
@@ -439,16 +456,8 @@
         <section id="tab-activity">
           <div class="between">
             <h2>Active Baby: <span id="active-baby-name" class="muted">No active baby — set one in Settings.</span></h2>
-            <button onclick="easybaby.openFeedModal('create')">+ Log Activity</button>
           </div>
-
-          <div class="mt-4">
-            <div class="between">
-              <h2>Today’s Feeds</h2>
-              <div id="today-totals" class="muted"></div>
-            </div>
-            <div id="feed-list" class="list"></div>
-          </div>
+          <p class="muted">Activity logging will be added after fixing the baby creation issue.</p>
         </section>
 
         <!-- SETTINGS TAB -->
@@ -479,85 +488,11 @@
           <div class="mt-4">
             <button onclick="easybaby.logout()">Sign out</button>
           </div>
+
+          <h2 class="mt-4">Debug Log</h2>
+          <div id="debug-log" style="max-height:300px; overflow-y:auto; border:1px solid var(--line); padding:8px; border-radius:8px; background:#f9fafb;"></div>
         </section>
       </div>
-    </div>
-  </div>
-
-  <!-- Feed Modal -->
-  <div id="modal-backdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-    <div class="modal">
-      <header>
-        <h3 id="modal-title">Log Feed</h3>
-        <button class="close-x" onclick="easybaby.closeFeedModal()" aria-label="Close">×</button>
-      </header>
-      <main>
-        <form id="feed-form" onsubmit="easybaby.saveFeed(event)" class="grid">
-          <input type="hidden" id="feed-id" />
-          <div class="grid grid-2">
-            <div>
-              <label for="feed-when">Time</label>
-              <input id="feed-when" type="datetime-local" />
-            </div>
-            <div>
-              <label for="feed-type">Type</label>
-              <select id="feed-type" onchange="easybaby.updateFeedTypeVisibility()">
-                <option>Breast</option>
-                <option>Formula</option>
-                <option>Solid</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="grid grid-2">
-            <div>
-              <label for="feed-amount">Amount</label>
-              <input id="feed-amount" type="number" step="0.1" placeholder="e.g., 3" />
-            </div>
-            <div>
-              <label for="feed-units">Units</label>
-              <select id="feed-units">
-                <option value="oz">oz</option>
-                <option value="ml">ml</option>
-              </select>
-            </div>
-          </div>
-
-          <div id="breast-row" class="grid grid-2 hidden">
-            <div>
-              <label for="feed-side">Side</label>
-              <select id="feed-side">
-                <option value="">(either)</option>
-                <option value="left">left</option>
-                <option value="right">right</option>
-              </select>
-            </div>
-            <div class="grid grid-2">
-              <div>
-                <label for="feed-dur-left">Duration L (min)</label>
-                <input id="feed-dur-left" type="number" min="0" />
-              </div>
-              <div>
-                <label for="feed-dur-right">Duration R (min)</label>
-                <input id="feed-dur-right" type="number" min="0" />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label for="feed-notes">Notes</label>
-            <textarea id="feed-notes" placeholder="Optional notes…"></textarea>
-          </div>
-
-          <div class="row">
-            <span id="feed-msg" class="muted"></span>
-          </div>
-        </form>
-      </main>
-      <footer>
-        <button class="btn-ghost" onclick="easybaby.closeFeedModal()">Cancel</button>
-        <button id="feed-save" onclick="document.getElementById('feed-form').requestSubmit()">Save</button>
-      </footer>
     </div>
   </div>
 </body>
