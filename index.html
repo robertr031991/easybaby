@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>EasyBaby - Debug Version</title>
+  <title>EasyBaby - Quick Fix</title>
   <meta name="color-scheme" content="light dark" />
   <style>
     :root { --bg:#f9fafb; --card:#ffffff; --text:#111827; --muted:#6b7280; --line:#e5e7eb; --brand:#b45309; }
@@ -52,16 +52,10 @@
     /* ─────────── Supabase client ─────────── */
     const SUPABASE_URL = 'https://mfgdasfnidxxzcymfvfx.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mZ2Rhc2ZuaWR4eHpjeW1mdmZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0NzYxNTksImV4cCI6MjA3MjA1MjE1OX0.hMk0myq85kUDUB-RXvb-Y5Xg36lLFWryVOi34x3ahYU';
-    
-    // Make supabase globally available
-    let supabase;
-    try {
-      supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      window.supabase = supabase; // Add to global scope for console testing
-      debugLog('Supabase client created successfully');
-    } catch (e) {
-      debugLog('Supabase client creation failed', e);
-    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // TEMPORARY FIX: Use your actual user ID from the database
+    const HARDCODED_USER_ID = 'aefdeb9b-4649-4505-8cab-d533ece0d4f8';
 
     const ACTIVE_KEY = 'easybaby.activeBabyId';
 
@@ -152,42 +146,15 @@
 
     /* ─────────── App init ─────────── */
     async function init() {
-      debugLog('Initializing app');
+      debugLog('Initializing app (QUICK FIX VERSION)');
       await consumeAuthFromUrl();
 
-      debugLog('Refreshing session');
-      try { 
-        await supabase.auth.refreshSession(); 
-        debugLog('Session refreshed successfully');
-      } catch (e) { 
-        debugLog('Error refreshing session', e); 
-      }
+      // Skip session refresh for now
+      debugLog('Skipping session refresh - using hardcoded approach');
 
-      const { data: { session } } = await supabase.auth.getSession();
-      debugLog('Current session', session ? 'exists' : 'none');
-      setAuthView(!!session);
-
-      if (!session) {
-        switchTab('activity');
-        return;
-      }
-
-      const { data: { user } } = await supabase.auth.getUser();
-      debugLog('Current user', { id: user?.id, email: user?.email });
-      v.who().textContent = user?.email ? `Signed in as: ${user.email}` : '';
-
-      // Test database connection
-      debugLog('Testing database connection');
-      try {
-        const { data, error } = await supabase.from('babies').select('count', { count: 'exact', head: true });
-        if (error) {
-          debugLog('Database connection error', error);
-        } else {
-          debugLog('Database connection successful', { count: data });
-        }
-      } catch (e) {
-        debugLog('Database connection failed', e);
-      }
+      // Assume signed in for this quick fix
+      setAuthView(true);
+      v.who().textContent = 'Signed in (Quick Fix Mode)';
 
       const babies = await fetchBabies();
       let activeId = localStorage.getItem(ACTIVE_KEY);
@@ -214,12 +181,6 @@
       v.sent().classList.add('hidden');
       v.tabs().classList.toggle('hidden', !signedIn);
     }
-
-    supabase.auth.onAuthStateChange(async (_evt, session) => {
-      debugLog('Auth state changed', { event: _evt, hasSession: !!session });
-      setAuthView(!!session);
-      if (session) { await init(); } else { v.who().textContent=''; }
-    });
 
     /* ─────────── Tabs ─────────── */
     function switchTab(name){
@@ -276,6 +237,7 @@
         const { data, error } = await supabase
           .from('babies')
           .select('id,name,dob,timezone')
+          .eq('owner_id', HARDCODED_USER_ID)  // Use hardcoded user ID
           .order('dob',{ascending:false});
         
         if (error) { 
@@ -312,7 +274,7 @@
 
     async function createBaby(e){
       e.preventDefault();
-      debugLog('Creating baby - started');
+      debugLog('Creating baby - QUICK FIX VERSION');
       
       const btn = document.getElementById('create-baby-btn');
       btn.disabled = true; 
@@ -338,56 +300,11 @@
           return; 
         }
 
-        debugLog('Getting user authentication...');
-        let user;
-        try {
-          // Add a timeout to prevent hanging
-          const authPromise = supabase.auth.getSession();
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Auth timeout after 10 seconds')), 10000)
-          );
-          
-          const sessionResult = await Promise.race([authPromise, timeoutPromise]);
-          debugLog('Session result received', { hasData: !!sessionResult?.data });
-          
-          const { data: { session }, error: sessionError } = sessionResult;
-          debugLog('Session details', { 
-            hasSession: !!session, 
-            hasUser: !!session?.user, 
-            userId: session?.user?.id,
-            error: sessionError?.message 
-          });
-          
-          if (sessionError) {
-            throw new Error('Session error: ' + sessionError.message);
-          }
-          
-          if (!session || !session.user) {
-            throw new Error('No active session or user found');
-          }
-          
-          user = session.user;
-          debugLog('User extracted successfully', { userId: user.id, email: user.email });
-          
-        } catch (authErr) {
-          debugLog('Auth exception caught', { 
-            message: authErr?.message, 
-            name: authErr?.name,
-            stack: authErr?.stack?.substring(0, 200) 
-          });
-          throw new Error('Authentication failed: ' + authErr.message);
-        }
-        
-        if (!user) {
-          const error = 'Not signed in';
-          debugLog('No user found');
-          throw new Error(error);
-        }
-        
-        debugLog('User authenticated successfully', { userId: user.id, email: user.email });
+        // SKIP AUTHENTICATION - USE HARDCODED USER ID
+        debugLog('Using hardcoded user ID (bypassing auth)', { userId: HARDCODED_USER_ID });
 
         const payload = { 
-          owner_id: user.id, 
+          owner_id: HARDCODED_USER_ID,  // Use your actual user ID
           name, 
           dob, 
           timezone: tz 
@@ -395,31 +312,24 @@
         
         debugLog('Inserting baby with payload', payload);
 
-        let insertResult;
-        try {
-          insertResult = await supabase
-            .from('babies')
-            .insert([payload])
-            .select();
-          debugLog('Insert raw result', insertResult);
-        } catch (insertErr) {
-          debugLog('Insert exception', insertErr);
-          throw new Error('Database insert failed: ' + insertErr.message);
+        const { data, error } = await supabase
+          .from('babies')
+          .insert([payload])
+          .select();
+        
+        if (error) {
+          debugLog('Insert error', error);
+          throw error;
         }
         
-        if (insertResult.error) {
-          debugLog('Insert error from result', insertResult.error);
-          throw new Error('Database error: ' + insertResult.error.message);
-        }
-        
-        debugLog('Baby created successfully', insertResult.data);
+        debugLog('Baby created successfully!', data);
 
-        msg.textContent = 'Saved!'; 
+        msg.textContent = 'Baby created successfully!'; 
         msg.className = 'ok';
         document.getElementById('baby-name').value = ''; 
         document.getElementById('baby-dob').value = '';
         
-        debugLog('Fetching updated baby list...');
+        debugLog('Refreshing baby list...');
         const rows = await fetchBabies();
         const activeId = rows[0]?.id;
         if (activeId) {
@@ -431,7 +341,7 @@
         
       } catch(err) { 
         const errorMsg = 'Error: ' + (err?.message || String(err));
-        debugLog('Create baby final error', { message: err?.message, stack: err?.stack, fullError: err });
+        debugLog('Create baby error', err);
         msg.textContent = errorMsg; 
         msg.className = 'err'; 
       } finally { 
@@ -482,16 +392,16 @@
 <body>
   <div class="wrap">
     <div class="card">
-      <h1>EasyBaby - Debug Version</h1>
-      <p class="muted">This version includes detailed logging to help debug the issue.</p>
+      <h1>EasyBaby - Quick Fix Version</h1>
+      <p class="muted">This version bypasses authentication issues using your hardcoded user ID.</p>
 
-      <div class="tabs hidden" id="tabs">
+      <div class="tabs" id="tabs">
         <button class="tab-btn" data-tab="activity" onclick="easybaby.switchTab('activity')">Activity</button>
         <button class="tab-btn" data-tab="settings" onclick="easybaby.switchTab('settings')">Settings</button>
       </div>
 
       <!-- Signed OUT -->
-      <form id="view-signed-out" onsubmit="easybaby.sendLink(event)">
+      <form id="view-signed-out" class="hidden" onsubmit="easybaby.sendLink(event)">
         <input id="email" type="email" placeholder="you@example.com" required />
         <div class="row mt-3">
           <button type="submit">Send Magic Link</button>
@@ -505,7 +415,7 @@
       </div>
 
       <!-- Signed IN -->
-      <div id="view-signed-in" class="hidden mt-2">
+      <div id="view-signed-in" class="mt-2">
         <div id="whoami" class="note"></div>
 
         <!-- ACTIVITY TAB -->
@@ -513,7 +423,7 @@
           <div class="between">
             <h2>Active Baby: <span id="active-baby-name" class="muted">No active baby — set one in Settings.</span></h2>
           </div>
-          <p class="muted">Activity logging will be added after fixing the baby creation issue.</p>
+          <p class="muted">Activity logging will be added after confirming baby creation works.</p>
         </section>
 
         <!-- SETTINGS TAB -->
@@ -522,7 +432,7 @@
           <form onsubmit="easybaby.createBaby(event)">
             <div class="mt-2">
               <label for="baby-name">Name</label>
-              <input id="baby-name" type="text" placeholder="e.g., Peyton" required />
+              <input id="baby-name" type="text" placeholder="e.g., Emma" required />
             </div>
             <div class="mt-2">
               <label for="baby-dob">Date of Birth</label>
