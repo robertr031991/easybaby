@@ -47,7 +47,8 @@
   </style>
 
   <script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+    // Try unpkg CDN instead of jsdelivr
+    import { createClient } from 'https://unpkg.com/@supabase/supabase-js@2/dist/module/index.js';
 
     /* ─────────── Supabase client ─────────── */
     const SUPABASE_URL = 'https://mfgdasfnidxxzcymfvfx.supabase.co';
